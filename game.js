@@ -88,25 +88,31 @@ function load(){
   }
 }
 
+// ===== 超时 fetch 工具函数 =====
+function fetchWithTimeout(url, options={}, timeout=5000){
+  return Promise.race([
+    fetch(url, options),
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error('请求超时')),timeout))
+  ]);
+}
+
 // ===== 云端存储（使用免费的 jsonblob.com） =====
 async function cloudSave(data){
   try{
     updateSyncUI('syncing');
     const blobId=localStorage.getItem('storyGame_blobId_'+currentUser);
     if(blobId){
-      // 更新已有的blob
-      await fetch(JSONBLOB_API+'/'+blobId,{
+      await fetchWithTimeout(JSONBLOB_API+'/'+blobId,{
         method:'PUT',
         headers:{'Content-Type':'application/json','Accept':'application/json'},
         body:JSON.stringify(data)
-      });
+      },5000);
     }else{
-      // 创建新的blob
-      const resp=await fetch(JSONBLOB_API,{
+      const resp=await fetchWithTimeout(JSONBLOB_API,{
         method:'POST',
         headers:{'Content-Type':'application/json','Accept':'application/json'},
         body:JSON.stringify(data)
-      });
+      },5000);
       if(resp.ok){
         const loc=resp.headers.get('Location')||resp.headers.get('location');
         if(loc){
@@ -127,9 +133,9 @@ async function cloudLoad(){
     updateSyncUI('syncing');
     const blobId=localStorage.getItem('storyGame_blobId_'+currentUser);
     if(!blobId){updateSyncUI('done');return false;}
-    const resp=await fetch(JSONBLOB_API+'/'+blobId,{
+    const resp=await fetchWithTimeout(JSONBLOB_API+'/'+blobId,{
       headers:{'Accept':'application/json'}
-    });
+    },5000);
     if(resp.ok){
       const data=await resp.json();
       if(data&&data._user===currentUser){
@@ -137,7 +143,6 @@ async function cloudLoad(){
         const localStr=localStorage.getItem(localKey);
         let localData=null;
         try{localData=localStr?JSON.parse(localStr):null;}catch(e){}
-        // 用最新的数据（比较时间戳）
         if(!localData||!localData._lastSync||data._lastSync>localData._lastSync){
           G={...G,...data};
           localStorage.setItem(localKey,JSON.stringify(data));
@@ -196,6 +201,11 @@ async function doLogin(){
     return;
   }
   
+  // 显示加载状态
+  const btn=document.getElementById('loginBtn');
+  btn.disabled=true;
+  btn.textContent='⏳ 正在进入冒险世界...';
+  
   currentUser=ACCOUNT_NAME;
   selectedAvatar=ACCOUNT_AVATAR;
   // 保存登录状态和版本标记
@@ -203,10 +213,11 @@ async function doLogin(){
   localStorage.setItem('storyGame_currentAvatar',ACCOUNT_AVATAR);
   localStorage.setItem('storyGame_loginVer','v2');
   
-  // 先尝试从云端加载
-  await cloudLoad();
-  // 再从本地加载（如果云端更新了就用云端的）
+  // 先从本地加载
   load();
+  
+  // 尝试云端加载（不阻塞登录流程）
+  cloudLoad().catch(()=>{});
   
   // 显示游戏界面
   document.getElementById('loginOverlay').style.display='none';
@@ -221,6 +232,10 @@ async function doLogin(){
   
   // 初始化界面
   initGame();
+  
+  // 恢复按钮状态（以防下次用到）
+  btn.disabled=false;
+  btn.textContent='🚀 开始冒险！';
   
   // 开启自动同步（每30秒同步一次）
   if(syncTimer)clearInterval(syncTimer);
@@ -281,12 +296,12 @@ function createStars(){
 }
 
 // ===== 页面切换 =====
-function switchPage(p){
-  document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
+function switchPage(p,el){
+  document.querySelectorAll('.page').forEach(e=>e.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
   const map={home:'homePage',achieve:'achievePage',treasure:'treasurePage'};
   document.getElementById(map[p]).classList.add('active');
-  event.currentTarget.classList.add('active');
+  if(el)el.classList.add('active');
 }
 
 // ===== 日期导航 =====
@@ -646,9 +661,11 @@ function initGame(){
     currentUser=ACCOUNT_NAME;
     selectedAvatar=ACCOUNT_AVATAR;
     
-    // 先尝试从云端加载
-    await cloudLoad();
+    // 先从本地加载（立即生效）
     load();
+    
+    // 异步尝试云端加载（不阻塞界面显示）
+    cloudLoad().catch(()=>{});
     
     // 显示游戏界面
     document.getElementById('loginOverlay').style.display='none';
