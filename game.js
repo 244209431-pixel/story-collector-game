@@ -470,7 +470,7 @@ function unlockStory(){
   const story=pool[~~(Math.random()*pool.length)];
   if(!G.gems.includes('story'))G.gems.push('story');
   G.collected.push({...story,date:new Date().toLocaleDateString('zh-CN'),type:isJ?'jump':'swim'});
-  renderGems();save();showStoryModal(story);bigConfetti();
+  renderGems();renderCollected();save();showStoryModal(story);bigConfetti();
 }
 function showStoryModal(s){
   document.getElementById('mStoryTitle').textContent=s.title;
@@ -545,14 +545,23 @@ function submitStory(){
 }
 function renderMyStories(){
   const c=document.getElementById('myStories');
-  c.innerHTML=G.myStories.map(s=>`<div class="collected-item" onclick="showStoryModal({title:'${s.title.replace(/'/g,"\\'")}',text:'${s.text.replace(/'/g,"\\'").replace(/\n/g,'\\n')}',choices:[]})">
+  c.innerHTML=G.myStories.map((s,idx)=>`<div class="collected-item" onclick="showMyStory(${idx})">
     <h4>${s.title}</h4><p>${s.date} · 我的创作</p></div>`).join('');
+}
+function showMyStory(idx){
+  const s=G.myStories[idx];
+  if(s)showStoryModal({title:s.title,text:s.text,choices:[]});
 }
 function renderCollected(){
   const c=document.getElementById('collectedStories');
   if(!G.collected.length){c.innerHTML='<p style="text-align:center;color:var(--t3);font-size:13px;padding:20px">还没有收集到故事，完成任务来解锁吧！</p>';return}
-  c.innerHTML=G.collected.map(s=>`<div class="collected-item" onclick="showStoryModal({title:'${s.title.replace(/'/g,"\\'")}',text:\`${s.text.replace(/`/g,'\\`')}\`,choices:[]})">
-    <h4>${s.title}</h4><p>${s.date} · ${s.type==='jump'?'🏃‍♀️ 跳绳日':'🏊‍♀️ 游泳日'}</p></div>`).join('');
+  c.innerHTML=G.collected.map((s,idx)=>`<div class="collected-item" onclick="showCollectedStory(${idx})">
+    <div style="display:flex;align-items:center;gap:8px"><span style="font-size:20px">${s.type==='jump'?'🏃‍♀️':'🏊‍♀️'}</span><div>
+    <h4>${s.title}</h4><p>${s.date} · ${s.type==='jump'?'跳绳日故事':'游泳日故事'}</p></div></div></div>`).join('');
+}
+function showCollectedStory(idx){
+  const s=G.collected[idx];
+  if(s)showStoryModal({title:s.title,text:s.text,choices:[]});
 }
 
 // ===== 行为习惯 ⭐ =====
