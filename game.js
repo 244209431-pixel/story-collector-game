@@ -198,9 +198,10 @@ async function doLogin(){
   
   currentUser=ACCOUNT_NAME;
   selectedAvatar=ACCOUNT_AVATAR;
-  // 保存登录状态
+  // 保存登录状态和版本标记
   localStorage.setItem('storyGame_currentUser',ACCOUNT_NAME);
   localStorage.setItem('storyGame_currentAvatar',ACCOUNT_AVATAR);
+  localStorage.setItem('storyGame_loginVer','v2');
   
   // 先尝试从云端加载
   await cloudLoad();
@@ -632,6 +633,13 @@ function initGame(){
 // 启动：检查是否已登录
 (async function startup(){
   createStars(); // 先创建背景粒子
+  // 版本标记：v2 表示密码登录版本，旧版本没有这个标记需要重新验证密码
+  const loginVer=localStorage.getItem('storyGame_loginVer');
+  if(!loginVer||loginVer<'v2'){
+    // 旧版本登录状态，清除并要求重新输密码
+    localStorage.removeItem('storyGame_currentUser');
+    localStorage.removeItem('storyGame_currentAvatar');
+  }
   const savedUser=localStorage.getItem('storyGame_currentUser');
   if(savedUser===ACCOUNT_NAME){
     // 自动登录（之前已验证过密码）
