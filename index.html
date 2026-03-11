@@ -14,19 +14,11 @@
   <div class="login-card">
     <div class="login-logo">📖✨</div>
     <h1 class="login-title">故事收集家</h1>
-    <p class="login-desc">输入你的昵称，开始冒险吧！<br>不同设备用同一个昵称，进度自动同步 🌈</p>
+    <p class="login-desc">欢迎回来，棠棠的冒险世界！🌈<br>请输入密码进入游戏</p>
+    <div class="login-avatar-display">👧</div>
+    <div class="login-name-display">棠棠</div>
     <div class="login-input-wrap">
-      <input type="text" id="nicknameInput" class="login-input" placeholder="输入昵称（如：宝宝、妈妈、爸爸）" maxlength="20" autocomplete="off"/>
-    </div>
-    <div class="login-avatars">
-      <span class="login-avatar-option selected" data-avatar="👧" onclick="selectAvatar(this)">👧</span>
-      <span class="login-avatar-option" data-avatar="👦" onclick="selectAvatar(this)">👦</span>
-      <span class="login-avatar-option" data-avatar="👩" onclick="selectAvatar(this)">👩</span>
-      <span class="login-avatar-option" data-avatar="👨" onclick="selectAvatar(this)">👨</span>
-      <span class="login-avatar-option" data-avatar="👵" onclick="selectAvatar(this)">👵</span>
-      <span class="login-avatar-option" data-avatar="👴" onclick="selectAvatar(this)">👴</span>
-      <span class="login-avatar-option" data-avatar="🦄" onclick="selectAvatar(this)">🦄</span>
-      <span class="login-avatar-option" data-avatar="🐱" onclick="selectAvatar(this)">🐱</span>
+      <input type="password" id="passwordInput" class="login-input" placeholder="请输入密码" maxlength="20" autocomplete="off"/>
     </div>
     <button class="login-btn" id="loginBtn" onclick="doLogin()">🚀 开始冒险！</button>
     <div class="login-hint" id="loginHint"></div>
