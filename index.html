@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>✨ 故事收集家 - 打卡冒险游戏 ✨</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="stars-container" id="starsContainer"></div>
+
+<!-- ====== 登录页 ====== -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-card">
+    <div class="login-logo">📖✨</div>
+    <h1 class="login-title">故事收集家</h1>
+    <p class="login-desc">输入你的昵称，开始冒险吧！<br>不同设备用同一个昵称，进度自动同步 🌈</p>
+    <div class="login-input-wrap">
+      <input type="text" id="nicknameInput" class="login-input" placeholder="输入昵称（如：宝宝、妈妈、爸爸）" maxlength="20" autocomplete="off"/>
+    </div>
+    <div class="login-avatars">
+      <span class="login-avatar-option selected" data-avatar="👧" onclick="selectAvatar(this)">👧</span>
+      <span class="login-avatar-option" data-avatar="👦" onclick="selectAvatar(this)">👦</span>
+      <span class="login-avatar-option" data-avatar="👩" onclick="selectAvatar(this)">👩</span>
+      <span class="login-avatar-option" data-avatar="👨" onclick="selectAvatar(this)">👨</span>
+      <span class="login-avatar-option" data-avatar="👵" onclick="selectAvatar(this)">👵</span>
+      <span class="login-avatar-option" data-avatar="👴" onclick="selectAvatar(this)">👴</span>
+      <span class="login-avatar-option" data-avatar="🦄" onclick="selectAvatar(this)">🦄</span>
+      <span class="login-avatar-option" data-avatar="🐱" onclick="selectAvatar(this)">🐱</span>
+    </div>
+    <button class="login-btn" id="loginBtn" onclick="doLogin()">🚀 开始冒险！</button>
+    <div class="login-hint" id="loginHint"></div>
+    <div class="sync-status" id="syncStatus">☁️ 云端同步就绪</div>
+  </div>
+</div>
+
+<div class="app-container" id="appContainer" style="display:none">
+
+  <!-- ====== 首页 ====== -->
+  <div class="page active" id="homePage">
+    <div class="page-pad">
+      <div class="status-bar">
+        <div class="avatar-section">
+          <div class="avatar">👧<span class="crown" id="crownIcon" style="display:none">👑</span></div>
+          <div class="player-info">
+            <h2 id="playerName">故事收集家</h2>
+            <div class="title" id="playerTitle">见习冒险者</div>
+            <div class="title-badges" id="titleBadges"></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          <div class="streak-badge">🔥 <span id="streakCount">0</span>天连续</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="sync-dot" id="syncDot" title="云端同步状态">☁️</span>
+            <button class="logout-btn" onclick="doLogout()" title="切换账号">🔄</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="date-nav" id="dateNav"></div>
+      <div id="sportCardContainer"></div>
+
+      <div class="card">
+        <h3>💎 今日故事宝石</h3>
+        <div class="gems-grid" id="gemsGrid"></div>
+      </div>
+
+      <div class="card">
+        <h3>📋 每日冒险任务</h3>
+        <div id="tasksList"></div>
+      </div>
+
+      <div class="card">
+        <h3>📖 今日故事</h3>
+        <div class="story-book">
+          <span class="book-icon">📚</span>
+          <h4 id="storyTitle">等待宝石解锁...</h4>
+          <p id="storyPreview">完成所有任务，集满宝石，解锁今天的神奇故事！</p>
+          <div class="story-progress-bar" id="storyProgressBar"></div>
+          <button class="btn-unlock" id="btnUnlock" disabled onclick="unlockStory()">🔮 宝石不足</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>⭐ 今日行为习惯</h3>
+        <div id="habitsList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== 成就页 ====== -->
+  <div class="page" id="achievePage">
+    <div class="page-pad">
+      <div class="card"><h3>🏆 隐藏剧情 & 成就</h3><div id="achievementsList"></div></div>
+    </div>
+  </div>
+
+  <!-- ====== 宝箱页 ====== -->
+  <div class="page" id="treasurePage">
+    <div class="page-pad">
+      <div class="card treasure-card">
+        <h3>🎁 成长宝箱</h3>
+        <div class="treasure-chest" id="treasureChest">🧰</div>
+        <div class="treasure-days" id="treasureDays"></div>
+        <div class="treasure-info">集满<b>7天</b>宝石可兑换<br>✨<b>「故事导演权」</b>✨<br>自己编故事加入游戏！</div>
+        <button class="btn-chest" id="btnChest" disabled onclick="openChest()">🔒 还需更多宝箱碎片</button>
+      </div>
+      <div class="card director-mode" id="directorMode">
+        <h3>🎬 故事导演模式</h3>
+        <p style="font-size:15px;color:var(--t3);margin-bottom:14px">恭喜获得故事导演权！编写你的故事吧~</p>
+        <textarea class="director-ta" id="directorTa" placeholder="在这里写下你的故事..."></textarea>
+        <button class="btn-submit" onclick="submitStory()">✨ 发布我的故事</button>
+        <div id="myStories"></div>
+      </div>
+      <div class="card"><h3>📚 已收集的故事</h3><div id="collectedStories"></div></div>
+    </div>
+  </div>
+</div> <!-- /app-container -->
+
+<!-- 底部导航 -->
+<div class="bottom-nav">
+  <button class="nav-item active" onclick="switchPage('home')"><span class="nav-icon">🏠</span>今日任务</button>
+  <button class="nav-item" onclick="switchPage('achieve')"><span class="nav-icon">🏆</span>隐藏剧情</button>
+  <button class="nav-item" onclick="switchPage('treasure')"><span class="nav-icon">🧰</span>成长宝箱</button>
+</div>
+
+<!-- 模态框 -->
+<div class="modal-overlay" id="storyModal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeModal('storyModal')">✕</button>
+    <div class="modal-title" id="mStoryTitle"></div>
+    <div class="modal-body" id="mStoryBody"></div>
+  </div>
+</div>
+<div class="modal-overlay" id="achieveModal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeModal('achieveModal')">✕</button>
+    <div class="modal-title" id="mAchTitle"></div>
+    <div class="modal-body" id="mAchBody"></div>
+  </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
