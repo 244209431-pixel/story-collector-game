@@ -171,28 +171,36 @@ function updateSyncUI(status){
 }
 
 // ===== 登录 =====
-function selectAvatar(el){
-  document.querySelectorAll('.login-avatar-option').forEach(a=>a.classList.remove('selected'));
-  el.classList.add('selected');
-  selectedAvatar=el.dataset.avatar;
-}
+// 固定账号配置
+const ACCOUNT_NAME='棠棠';
+const ACCOUNT_PWD='2068';
+const ACCOUNT_AVATAR='👧';
 
 async function doLogin(){
-  const input=document.getElementById('nicknameInput');
-  const name=input.value.trim();
-  if(!name){
-    showLoginHint('请输入昵称哦~ 😊');
+  const input=document.getElementById('passwordInput');
+  const pwd=input.value.trim();
+  if(!pwd){
+    showLoginHint('请输入密码哦~ 🔑');
     input.focus();
     return;
   }
-  if(name.length<1||name.length>20){
-    showLoginHint('昵称长度1-20个字哦~');
+  if(pwd!==ACCOUNT_PWD){
+    showLoginHint('密码不对哦，再试试~ ❌');
+    input.value='';
+    input.focus();
+    // 密码错误时抖动效果
+    const card=document.querySelector('.login-card');
+    card.style.animation='none';
+    card.offsetHeight; // 触发 reflow
+    card.style.animation='loginShake 0.5s ease';
     return;
   }
-  currentUser=name;
+  
+  currentUser=ACCOUNT_NAME;
+  selectedAvatar=ACCOUNT_AVATAR;
   // 保存登录状态
-  localStorage.setItem('storyGame_currentUser',name);
-  localStorage.setItem('storyGame_currentAvatar',selectedAvatar);
+  localStorage.setItem('storyGame_currentUser',ACCOUNT_NAME);
+  localStorage.setItem('storyGame_currentAvatar',ACCOUNT_AVATAR);
   
   // 先尝试从云端加载
   await cloudLoad();
@@ -205,10 +213,10 @@ async function doLogin(){
   document.querySelector('.bottom-nav').style.display='';
   
   // 设置头像和名称
-  document.querySelector('.avatar').textContent=selectedAvatar;
+  document.querySelector('.avatar').textContent=ACCOUNT_AVATAR;
   const crown=document.getElementById('crownIcon');
-  if(crown)document.querySelector('.avatar').innerHTML=selectedAvatar+'<span class="crown" id="crownIcon" '+(G.totalDays>=7?'':'style="display:none"')+'>👑</span>';
-  document.getElementById('playerName').textContent=name;
+  if(crown)document.querySelector('.avatar').innerHTML=ACCOUNT_AVATAR+'<span class="crown" id="crownIcon" '+(G.totalDays>=7?'':'style="display:none"')+'>👑</span>';
+  document.getElementById('playerName').textContent=ACCOUNT_NAME;
   
   // 初始化界面
   initGame();
@@ -221,7 +229,7 @@ async function doLogin(){
 }
 
 function doLogout(){
-  if(confirm('确定要切换账号吗？')){
+  if(confirm('确定要退出登录吗？')){
     // 先保存当前数据
     save();
     currentUser=null;
@@ -241,8 +249,8 @@ function doLogout(){
     document.getElementById('loginOverlay').style.display='';
     document.getElementById('appContainer').style.display='none';
     document.querySelector('.bottom-nav').style.display='none';
-    document.getElementById('nicknameInput').value='';
-    document.getElementById('nicknameInput').focus();
+    document.getElementById('passwordInput').value='';
+    document.getElementById('passwordInput').focus();
   }
 }
 
@@ -625,27 +633,42 @@ function initGame(){
 (async function startup(){
   createStars(); // 先创建背景粒子
   const savedUser=localStorage.getItem('storyGame_currentUser');
-  const savedAvatar=localStorage.getItem('storyGame_currentAvatar');
-  if(savedUser){
-    // 自动登录
-    currentUser=savedUser;
-    selectedAvatar=savedAvatar||'👧';
-    document.getElementById('nicknameInput').value=savedUser;
-    // 选中对应头像
-    document.querySelectorAll('.login-avatar-option').forEach(a=>{
-      if(a.dataset.avatar===selectedAvatar)a.classList.add('selected');
-      else a.classList.remove('selected');
-    });
-    await doLogin();
+  if(savedUser===ACCOUNT_NAME){
+    // 自动登录（之前已验证过密码）
+    currentUser=ACCOUNT_NAME;
+    selectedAvatar=ACCOUNT_AVATAR;
+    
+    // 先尝试从云端加载
+    await cloudLoad();
+    load();
+    
+    // 显示游戏界面
+    document.getElementById('loginOverlay').style.display='none';
+    document.getElementById('appContainer').style.display='';
+    document.querySelector('.bottom-nav').style.display='';
+    
+    // 设置头像和名称
+    document.querySelector('.avatar').textContent=ACCOUNT_AVATAR;
+    const crown=document.getElementById('crownIcon');
+    if(crown)document.querySelector('.avatar').innerHTML=ACCOUNT_AVATAR+'<span class="crown" id="crownIcon" '+(G.totalDays>=7?'':'style="display:none"')+'>👑</span>';
+    document.getElementById('playerName').textContent=ACCOUNT_NAME;
+    
+    initGame();
+    
+    // 开启自动同步
+    if(syncTimer)clearInterval(syncTimer);
+    syncTimer=setInterval(()=>{
+      if(currentUser)cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now()});
+    },30000);
   }else{
     // 显示登录页，隐藏游戏
     document.getElementById('loginOverlay').style.display='';
     document.getElementById('appContainer').style.display='none';
     document.querySelector('.bottom-nav').style.display='none';
-    document.getElementById('nicknameInput').focus();
+    document.getElementById('passwordInput').focus();
   }
   // 监听回车键
-  document.getElementById('nicknameInput').addEventListener('keypress',function(e){
+  document.getElementById('passwordInput').addEventListener('keypress',function(e){
     if(e.key==='Enter')doLogin();
   });
 })();
