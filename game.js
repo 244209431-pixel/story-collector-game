@@ -1,14 +1,24 @@
 // ==========================================
 // 🎮 故事收集家 - 游戏核心引擎（云同步版）
-// v3.0 — 彻底修复数据丢失问题
+// v6.0 — 彻底修复数据丢失：硬编码 blobId + 三重数据源恢复
 // ==========================================
 
 // ===== 云同步配置 =====
 let currentUser=null;
 let selectedAvatar='👧';
 let syncTimer=null;
+let isFirstLoad=false; // 标记是否首次加载（本地无数据）
 const SYNC_STORAGE_PREFIX='storyGame_user_';
 const JSONBLOB_API='https://jsonblob.com/api/jsonBlob';
+// blobId 备份 key（不依赖 localStorage，使用固定格式便于恢复）
+const BLOBID_BACKUP_PREFIX='storyGame_blobBackup_';
+
+// 【v6.0 核心修复】为每个用户硬编码固定 blobId
+// 这样无论部署到任何域名（github.io / surge.sh / 其他），都能找到云端数据
+// 不再依赖 localStorage 存储 blobId，彻底解决换域名数据丢失问题
+const FIXED_BLOB_IDS={
+  '棠棠':'019ce108-5c9c-71b2-b1b0-dc8defa9cafe'
+};
 
 const W=['日','一','二','三','四','五','六'];
 const JUMP=[1,2,4,6,0], SWIM=[3,5];
@@ -72,35 +82,40 @@ function save(){
   if(!G.history) G.history={};
   if(!G.weekly) G.weekly={};
 
-  // 只在今天有实际打卡数据时才写入 history，避免空数据覆盖
-  const todayStr=new Date().toDateString();
+  // 实时把今天打卡数据写入 history 和 weekly（关键：每次 save 都写！）
+  const todayStr=G.date||new Date().toDateString();
   const anyTaskDone=G.tasks&&Object.values(G.tasks).some(v=>v);
   const anyHabitDone=G.habits&&Object.values(G.habits).some(v=>v);
-  if(anyTaskDone||anyHabitDone||G.jumpCount>0||G.swimDone){
-    const dw=new Date().getDay();
+  const hasAnyData=anyTaskDone||anyHabitDone||G.jumpCount>0||G.swimDone;
+  
+  if(hasAnyData){
+    const dw=new Date(todayStr).getDay();
+    const allTaskDone=Object.values(G.tasks).every(v=>v);
+    
+    // 写入 history（总是用最新的数据覆盖今天的记录）
     G.history[todayStr]={
       tasks:{...G.tasks},
       habits:{...G.habits},
       jumpCount:G.jumpCount,
       swimDone:G.swimDone,
-      gems:[...G.gems],
+      gems:G.gems?[...G.gems]:[],
       sportType:JUMP.includes(dw)?'jump':'swim',
-      allDone:Object.values(G.tasks).every(v=>v)
+      allDone:allTaskDone
     };
-    // 同时实时写入 weekly（不等跨天！这是关键修复）
-    if(!G.weekly[todayStr] || G.weekly[todayStr]===false){
-      const allDone=Object.values(G.tasks).every(v=>v);
-      G.weekly[todayStr]=allDone?true:'partial';
-    } else if(G.weekly[todayStr]==='partial'){
-      // 之前是 partial，检查是否已经全完成
-      const allDone=Object.values(G.tasks).every(v=>v);
-      if(allDone) G.weekly[todayStr]=true;
+    
+    // 写入 weekly（只向上升级，不向下降级）
+    const curWeekly=G.weekly[todayStr];
+    if(!curWeekly||curWeekly===false){
+      G.weekly[todayStr]=allTaskDone?true:'partial';
+    }else if(curWeekly==='partial'&&allTaskDone){
+      G.weekly[todayStr]=true;
     }
   }
 
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v3'};
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v6'};
   localStorage.setItem(key,JSON.stringify(data));
+  console.log('[save] 已保存, history keys=',Object.keys(G.history).length,', weekly keys=',Object.keys(G.weekly).length);
   // 异步同步到云端
   cloudSave(data);
 }
@@ -113,6 +128,7 @@ function load(){
   
   // 从一个干净的默认状态开始
   G=makeDefaultState();
+  isFirstLoad=false;
   
   if(raw){
     try{
@@ -134,12 +150,18 @@ function load(){
       if(typeof d.totalDays==='number') G.totalDays=d.totalDays;
       if(typeof d.dirUnlocked==='boolean') G.dirUnlocked=d.dirUnlocked;
       if(d.history&&typeof d.history==='object') G.history={...d.history};
+      
+      console.log('[load] 原始数据加载完成, date=',G.date);
+      console.log('[load] history keys=',Object.keys(G.history));
+      console.log('[load] weekly keys=',Object.keys(G.weekly));
     }catch(e){
       console.error('[load] JSON解析错误',e);
     }
+  } else {
+    // 本地完全没有数据（首次使用 / 缓存被清 / 换了设备）
+    isFirstLoad=true;
+    console.log('[load] 本地无数据，标记为首次加载，等待云端恢复');
   }
-
-  console.log('[load] 加载完成, date=',G.date,', weekly keys=',Object.keys(G.weekly).length,', history keys=',Object.keys(G.history).length);
   
   // 跨天处理
   const today=new Date().toDateString();
@@ -150,12 +172,17 @@ function load(){
     // 全新用户，直接设置为今天
     G.date=today;
   }
+  // 同一天就不重置，保持现有数据
   
   // 数据修复（无论是否跨天都执行）
   repairData();
   
-  // 保存修复后的数据
-  save();
+  console.log('[load] 修复后: history keys=',Object.keys(G.history),', weekly keys=',Object.keys(G.weekly),', totalDays=',G.totalDays,', streak=',G.streak);
+  
+  // 只有本地有数据时才立刻保存；首次加载时等云端恢复后再保存（避免空数据覆盖云端）
+  if(!isFirstLoad){
+    save();
+  }
 }
 
 // ===== 跨天处理（独立函数，逻辑清晰） =====
@@ -294,121 +321,213 @@ function fetchWithTimeout(url, options={}, timeout=5000){
 }
 
 // ===== 云端存储 =====
+// blobId 多重存取工具（防止 localStorage 部分丢失导致 blobId 找不到）
+function saveBlobId(user, blobId){
+  localStorage.setItem('storyGame_blobId_'+user, blobId);
+  localStorage.setItem(BLOBID_BACKUP_PREFIX+user, blobId);
+  // 尝试写入 sessionStorage 作为第三重备份
+  try{ sessionStorage.setItem('storyGame_blobId_'+user, blobId); }catch(e){}
+  console.log('[blobId] 已保存, user=',user,', id=',blobId);
+}
+function getBlobId(user){
+  // 【v6.0】优先使用硬编码的固定 blobId（跨域名不丢失）
+  if(FIXED_BLOB_IDS[user]) return FIXED_BLOB_IDS[user];
+  // 兼容：如果没有硬编码，回退到 localStorage
+  return localStorage.getItem('storyGame_blobId_'+user)
+    || localStorage.getItem(BLOBID_BACKUP_PREFIX+user)
+    || (function(){ try{ return sessionStorage.getItem('storyGame_blobId_'+user); }catch(e){ return null; } })();
+}
+
 async function cloudSave(data){
   try{
     updateSyncUI('syncing');
-    const blobId=localStorage.getItem('storyGame_blobId_'+currentUser);
+    const blobId=getBlobId(currentUser);
     if(blobId){
+      // 有 blobId（固定的或 localStorage 中的），直接更新
       await fetchWithTimeout(JSONBLOB_API+'/'+blobId,{
         method:'PUT',
         headers:{'Content-Type':'application/json','Accept':'application/json'},
         body:JSON.stringify(data)
-      },5000);
+      },8000);
+      console.log('[cloudSave] PUT 更新成功, blobId=',blobId);
     }else{
+      // 没有 blobId 的用户，创建新 blob（一般不会走到这里，因为棠棠有固定 blobId）
       const resp=await fetchWithTimeout(JSONBLOB_API,{
         method:'POST',
         headers:{'Content-Type':'application/json','Accept':'application/json'},
         body:JSON.stringify(data)
-      },5000);
+      },8000);
       if(resp.ok){
         const loc=resp.headers.get('Location')||resp.headers.get('location');
         if(loc){
           const newId=loc.split('/').pop();
-          localStorage.setItem('storyGame_blobId_'+currentUser,newId);
+          saveBlobId(currentUser, newId);
+          console.log('[cloudSave] POST 创建成功, newBlobId=',newId);
         }
       }
     }
     updateSyncUI('done');
   }catch(e){
-    console.log('云端同步失败，使用本地存储',e);
+    console.log('[cloudSave] 云端同步失败，使用本地存储',e.message);
     updateSyncUI('offline');
   }
 }
 
-// ===== 云端加载（修复：不再覆盖本地数据，而是智能合并） =====
+// ===== 云端加载（v6.0：增强恢复能力 + 防空覆盖保护） =====
 async function cloudLoad(){
   try{
     updateSyncUI('syncing');
-    const blobId=localStorage.getItem('storyGame_blobId_'+currentUser);
-    if(!blobId){updateSyncUI('done');return false;}
+    const blobId=getBlobId(currentUser);
+    if(!blobId){
+      console.log('[cloudLoad] 无 blobId，跳过云端加载');
+      updateSyncUI('done');
+      return false;
+    }
+    // blobId 存在，确保 localStorage 中也有备份
+    saveBlobId(currentUser, blobId);
+    
+    console.log('[cloudLoad] 开始加载, blobId=',blobId,', isFirstLoad=',isFirstLoad);
+    
     const resp=await fetchWithTimeout(JSONBLOB_API+'/'+blobId,{
       headers:{'Accept':'application/json'}
-    },5000);
+    },10000); // 超时放宽到10秒
+    
     if(resp.ok){
       const data=await resp.json();
+      console.log('[cloudLoad] 云端数据:', JSON.stringify({
+        _user:data._user,
+        _version:data._version,
+        date:data.date,
+        historyKeys:data.history?Object.keys(data.history):[],
+        weeklyKeys:data.weekly?Object.keys(data.weekly):[],
+        totalDays:data.totalDays,
+        streak:data.streak
+      }));
+      
       if(data&&data._user===currentUser){
-        // 智能合并：只合并 history 和 weekly 中本地没有的记录
-        let merged=false;
-        if(data.history){
-          Object.keys(data.history).forEach(dateStr=>{
-            if(!G.history[dateStr]){
-              G.history[dateStr]=data.history[dateStr];
-              merged=true;
-            }
-          });
-        }
-        if(data.weekly){
-          Object.keys(data.weekly).forEach(dateStr=>{
-            const cloudVal=data.weekly[dateStr];
-            const localVal=G.weekly[dateStr];
-            // 云端有而本地没有，或云端比本地"更完整"
-            if(localVal===undefined||localVal===false){
-              if(cloudVal===true||cloudVal==='partial'){
-                G.weekly[dateStr]=cloudVal;
-                merged=true;
-              }
-            }else if(localVal==='partial'&&cloudVal===true){
-              G.weekly[dateStr]=true;
-              merged=true;
-            }
-          });
-        }
-        // 合并 collected 和 myStories（去重）
-        if(Array.isArray(data.collected)){
-          const existingTitles=new Set(G.collected.map(s=>s.title+s.date));
-          data.collected.forEach(s=>{
-            if(!existingTitles.has(s.title+s.date)){
-              G.collected.push(s);
-              merged=true;
-            }
-          });
-        }
-        if(Array.isArray(data.myStories)){
-          const existingStories=new Set(G.myStories.map(s=>s.text));
-          data.myStories.forEach(s=>{
-            if(!existingStories.has(s.text)){
-              G.myStories.push(s);
-              merged=true;
-            }
-          });
-        }
-        // 成就只向上合并（如果云端解锁了本地没有的）
-        if(data.ach){
-          Object.keys(data.ach).forEach(k=>{
-            if(data.ach[k]&&!G.ach[k]){
-              G.ach[k]=true;
-              merged=true;
-            }
-          });
-        }
-        if(data.dirUnlocked&&!G.dirUnlocked){G.dirUnlocked=true;merged=true;}
+        let changed=false;
         
-        if(merged){
-          console.log('[cloudLoad] 云端数据已合并');
+        // 【v6.0 关键修复】首次加载（本地无数据）→ 完整恢复模式
+        if(isFirstLoad){
+          console.log('[cloudLoad] 首次加载，执行完整恢复...');
+          // 完整恢复所有字段
+          if(data.date) G.date=data.date;
+          if(typeof data.jumpCount==='number') G.jumpCount=data.jumpCount;
+          if(typeof data.swimDone==='boolean') G.swimDone=data.swimDone;
+          if(data.tasks&&typeof data.tasks==='object') G.tasks={...G.tasks,...data.tasks};
+          if(data.habits&&typeof data.habits==='object') G.habits={...G.habits,...data.habits};
+          if(Array.isArray(data.gems)) G.gems=[...data.gems];
+          if(typeof data.streak==='number') G.streak=data.streak;
+          if(data.weekly&&typeof data.weekly==='object') G.weekly={...data.weekly};
+          if(Array.isArray(data.collected)) G.collected=[...data.collected];
+          if(Array.isArray(data.myStories)) G.myStories=[...data.myStories];
+          if(data.ach&&typeof data.ach==='object') G.ach={...G.ach,...data.ach};
+          if(typeof data.consJump==='number') G.consJump=data.consJump;
+          if(typeof data.weekSwim==='number') G.weekSwim=data.weekSwim;
+          if(typeof data.totalDays==='number') G.totalDays=data.totalDays;
+          if(typeof data.dirUnlocked==='boolean') G.dirUnlocked=data.dirUnlocked;
+          if(data.history&&typeof data.history==='object') G.history={...data.history};
+          
+          // 恢复后执行跨天处理
+          const today=new Date().toDateString();
+          if(G.date && G.date!==today){
+            console.log('[cloudLoad] 恢复后检测到跨天: 上次=',G.date,', 今天=',today);
+            handleDayChange(G.date, today);
+          } else if(!G.date){
+            G.date=today;
+          }
+          
+          changed=true;
+          isFirstLoad=false;
+          console.log('[cloudLoad] 完整恢复完成, history keys=',Object.keys(G.history),', weekly keys=',Object.keys(G.weekly));
+        } else {
+          // 常规模式：智能合并（只补充本地缺失的）
+          if(data.history){
+            Object.keys(data.history).forEach(dateStr=>{
+              if(!G.history[dateStr]){
+                G.history[dateStr]=data.history[dateStr];
+                changed=true;
+                console.log('[cloudLoad] 合并历史记录:',dateStr);
+              }
+            });
+          }
+          if(data.weekly){
+            Object.keys(data.weekly).forEach(dateStr=>{
+              const cloudVal=data.weekly[dateStr];
+              const localVal=G.weekly[dateStr];
+              if(localVal===undefined||localVal===false){
+                if(cloudVal===true||cloudVal==='partial'){
+                  G.weekly[dateStr]=cloudVal;
+                  changed=true;
+                }
+              }else if(localVal==='partial'&&cloudVal===true){
+                G.weekly[dateStr]=true;
+                changed=true;
+              }
+            });
+          }
+          // 合并 collected 和 myStories（去重）
+          if(Array.isArray(data.collected)){
+            const existingTitles=new Set(G.collected.map(s=>s.title+s.date));
+            data.collected.forEach(s=>{
+              if(!existingTitles.has(s.title+s.date)){
+                G.collected.push(s);
+                changed=true;
+              }
+            });
+          }
+          if(Array.isArray(data.myStories)){
+            const existingStories=new Set(G.myStories.map(s=>s.text));
+            data.myStories.forEach(s=>{
+              if(!existingStories.has(s.text)){
+                G.myStories.push(s);
+                changed=true;
+              }
+            });
+          }
+          // 成就只向上合并
+          if(data.ach){
+            Object.keys(data.ach).forEach(k=>{
+              if(data.ach[k]&&!G.ach[k]){
+                G.ach[k]=true;
+                changed=true;
+              }
+            });
+          }
+          if(data.dirUnlocked&&!G.dirUnlocked){G.dirUnlocked=true;changed=true;}
+        }
+        
+        if(changed){
+          console.log('[cloudLoad] 数据已更新，执行修复并保存');
           repairData();
           save();
           // 刷新界面
           initGame();
+        } else {
+          console.log('[cloudLoad] 云端无新数据需要合并');
         }
         updateSyncUI('done');
-        return merged;
+        return changed;
+      } else {
+        console.log('[cloudLoad] 云端数据用户不匹配:', data&&data._user, '!==', currentUser);
       }
+    } else {
+      console.log('[cloudLoad] HTTP 错误:', resp.status);
     }
     updateSyncUI('done');
     return false;
   }catch(e){
-    console.log('云端加载失败，使用本地数据',e);
+    console.log('[cloudLoad] 云端加载失败:',e.message);
     updateSyncUI('offline');
+    // 如果是首次加载但云端也失败了，保存空状态（但不覆盖云端）
+    if(isFirstLoad){
+      isFirstLoad=false;
+      // 【v6.0】只保存到本地，不触发 cloudSave，避免空数据覆盖云端
+      const key=SYNC_STORAGE_PREFIX+currentUser;
+      const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v6'};
+      localStorage.setItem(key,JSON.stringify(data));
+      console.log('[cloudLoad] 首次加载云端失败，仅保存到本地（不覆盖云端）');
+    }
     return false;
   }
 }
@@ -460,13 +579,17 @@ async function doLogin(){
   selectedAvatar=ACCOUNT_AVATAR;
   localStorage.setItem('storyGame_currentUser',ACCOUNT_NAME);
   localStorage.setItem('storyGame_currentAvatar',ACCOUNT_AVATAR);
-  localStorage.setItem('storyGame_loginVer','v3');
+  localStorage.setItem('storyGame_loginVer','v4');
   
-  // 加载数据
+  // 加载本地数据
   load();
   
-  // 异步云端合并（不会覆盖本地数据）
-  cloudLoad().catch(()=>{});
+  // 【关键修复】等待云端数据恢复完成后再渲染界面
+  try{
+    await cloudLoad();
+  }catch(e){
+    console.log('[doLogin] 云端加载失败，使用本地数据',e);
+  }
   
   // 显示游戏界面
   document.getElementById('loginOverlay').style.display='none';
@@ -485,7 +608,7 @@ async function doLogin(){
   
   if(syncTimer)clearInterval(syncTimer);
   syncTimer=setInterval(()=>{
-    if(currentUser)cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v3'});
+    if(currentUser)cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v6'});
   },30000);
 }
 
@@ -604,6 +727,9 @@ function showHistoryDetail(dateStr){
   panel.style.display='block';
   
   if(!hist){
+    // 【v6.0】没有记录时显示补录按钮
+    const isJ=JUMP.includes(dw);
+    const sportLabel=isJ?'跳绳':'游泳';
     panel.innerHTML=`<div class="history-header">
       <h3>📅 ${dateLabel}</h3>
       <button class="history-close" onclick="closeHistoryPanel()">✕</button>
@@ -611,6 +737,7 @@ function showHistoryDetail(dateStr){
     <div class="history-empty">
       <span style="font-size:36px">📭</span>
       <p>这一天没有打卡记录</p>
+      <button class="btn" style="margin-top:12px;background:linear-gradient(135deg,var(--pink),var(--purple));color:white;border:none;padding:10px 20px;border-radius:12px;font-size:14px;cursor:pointer" onclick="backfillDate('${dateStr}')">📝 补录这天的打卡</button>
     </div>`;
     return;
   }
@@ -674,6 +801,149 @@ function showHistoryDetail(dateStr){
 function closeHistoryPanel(){
   const panel=document.getElementById('historyPanel');
   if(panel)panel.style.display='none';
+}
+
+// ===== 【v6.0】补录历史打卡 =====
+function backfillDate(dateStr){
+  const d=new Date(dateStr);
+  const dw=d.getDay();
+  const isJ=JUMP.includes(dw);
+  const dateLabel=`${d.getMonth()+1}月${d.getDate()}日 周${W[dw]}`;
+  
+  const panel=document.getElementById('historyPanel');
+  if(!panel)return;
+  
+  panel.innerHTML=`<div class="history-header">
+    <h3>📝 补录 ${dateLabel}</h3>
+    <button class="history-close" onclick="closeHistoryPanel()">✕</button>
+  </div>
+  <div style="padding:8px 0">
+    <p style="font-size:13px;color:var(--t3);margin-bottom:12px">勾选这天完成的项目：</p>
+    <div class="backfill-item" onclick="toggleBackfill(this,'sport')">
+      <span class="bf-cb" id="bf_sport">⬜</span>
+      <span>${isJ?'🏃‍♀️ 跳绳':'🏊‍♀️ 游泳课'}</span>
+    </div>
+    ${isJ?`<div style="margin-left:32px;margin-bottom:8px">
+      <label style="font-size:12px;color:var(--t3)">跳绳个数：</label>
+      <input type="number" id="bf_jumpCount" value="1000" min="0" max="10000" style="width:80px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);font-size:13px"/>
+    </div>`:''}
+    <div class="backfill-item" onclick="toggleBackfill(this,'homework')">
+      <span class="bf-cb" id="bf_homework">⬜</span>
+      <span>📝 完成学校作业</span>
+    </div>
+    <div class="backfill-item" onclick="toggleBackfill(this,'study')">
+      <span class="bf-cb" id="bf_study">⬜</span>
+      <span>📖 新概念学习</span>
+    </div>
+    <div class="backfill-item" onclick="toggleBackfill(this,'outdoor')">
+      <span class="bf-cb" id="bf_outdoor">⬜</span>
+      <span>⭐ 行为习惯达标</span>
+    </div>
+    <hr style="margin:12px 0;border:none;border-top:1px solid var(--border)"/>
+    <div class="backfill-item" onclick="toggleBackfill(this,'fast')">
+      <span class="bf-cb" id="bf_fast">⬜</span>
+      <span>⚡ 做事快速不拖拉</span>
+    </div>
+    <div class="backfill-item" onclick="toggleBackfill(this,'tidy')">
+      <span class="bf-cb" id="bf_tidy">⬜</span>
+      <span>💊 吃完钙片和维生素D</span>
+    </div>
+    <div class="backfill-item" onclick="toggleBackfill(this,'polite')">
+      <span class="bf-cb" id="bf_polite">⬜</span>
+      <span>💝 有礼貌、好态度</span>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn" style="flex:1;background:linear-gradient(135deg,var(--ok),var(--ok2));color:white;border:none;padding:10px;border-radius:12px;font-size:14px;cursor:pointer" onclick="submitBackfill('${dateStr}')">✅ 确认补录</button>
+      <button class="btn" style="flex:1;background:var(--card);color:var(--t2);border:1px solid var(--border);padding:10px;border-radius:12px;font-size:14px;cursor:pointer" onclick="backfillAll('${dateStr}')">🌟 全部完成</button>
+    </div>
+  </div>`;
+  
+  // 添加样式
+  if(!document.getElementById('backfillStyle')){
+    const style=document.createElement('style');
+    style.id='backfillStyle';
+    style.textContent=`.backfill-item{display:flex;align-items:center;gap:8px;padding:8px 4px;cursor:pointer;border-radius:8px;transition:background .2s}.backfill-item:hover{background:rgba(168,85,247,0.08)}.bf-cb{font-size:18px;width:24px;text-align:center}`;
+    document.head.appendChild(style);
+  }
+}
+
+const _bfState={sport:false,homework:false,study:false,outdoor:false,fast:false,tidy:false,polite:false};
+
+function toggleBackfill(el,key){
+  _bfState[key]=!_bfState[key];
+  const cb=document.getElementById('bf_'+key);
+  if(cb) cb.textContent=_bfState[key]?'✅':'⬜';
+}
+
+function backfillAll(dateStr){
+  Object.keys(_bfState).forEach(k=>{
+    _bfState[k]=true;
+    const cb=document.getElementById('bf_'+k);
+    if(cb) cb.textContent='✅';
+  });
+}
+
+function submitBackfill(dateStr){
+  const d=new Date(dateStr);
+  const dw=d.getDay();
+  const isJ=JUMP.includes(dw);
+  const jumpInput=document.getElementById('bf_jumpCount');
+  const jumpCount=isJ?(jumpInput?parseInt(jumpInput.value)||0:1000):0;
+  
+  const tasks={
+    sport:_bfState.sport,
+    homework:_bfState.homework,
+    study:_bfState.study,
+    outdoor:_bfState.outdoor
+  };
+  const habits={
+    fast:_bfState.fast,
+    tidy:_bfState.tidy,
+    polite:_bfState.polite
+  };
+  
+  const anyTaskDone=Object.values(tasks).some(v=>v);
+  const allTaskDone=Object.values(tasks).every(v=>v);
+  
+  if(!anyTaskDone){
+    alert('至少勾选一项打卡项目哦~');
+    return;
+  }
+  
+  // 写入 history
+  if(!G.history) G.history={};
+  G.history[dateStr]={
+    tasks:{...tasks},
+    habits:{...habits},
+    jumpCount:jumpCount,
+    swimDone:!isJ&&_bfState.sport,
+    gems:[],
+    sportType:isJ?'jump':'swim',
+    allDone:allTaskDone
+  };
+  
+  // 写入 weekly
+  if(!G.weekly) G.weekly={};
+  G.weekly[dateStr]=allTaskDone?true:'partial';
+  
+  // 重置 backfill 状态
+  Object.keys(_bfState).forEach(k=>_bfState[k]=false);
+  
+  // 修复统计数据
+  repairData();
+  save();
+  
+  // 刷新界面
+  renderDateNav();
+  updateStatus();
+  renderTreasure();
+  renderAch();
+  
+  // 显示补录结果
+  showHistoryDetail(dateStr);
+  
+  console.log('[backfill] 补录成功:',dateStr,JSON.stringify(tasks));
+  gemAnim('💎');
 }
 
 // ===== 运动卡片 =====
@@ -1050,8 +1320,12 @@ function initGame(){
     
     load();
     
-    // 异步云端合并（安全合并，不会覆盖本地）
-    cloudLoad().catch(()=>{});
+    // 【关键修复】等待云端数据恢复完成后再渲染
+    try{
+      await cloudLoad();
+    }catch(e){
+      console.log('[startup] 云端加载失败',e);
+    }
     
     document.getElementById('loginOverlay').style.display='none';
     document.getElementById('appContainer').style.display='';
@@ -1066,7 +1340,7 @@ function initGame(){
     
     if(syncTimer)clearInterval(syncTimer);
     syncTimer=setInterval(()=>{
-      if(currentUser)cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v3'});
+      if(currentUser)cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v6'});
     },30000);
   }else{
     document.getElementById('loginOverlay').style.display='';
