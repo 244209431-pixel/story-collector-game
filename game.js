@@ -1,14 +1,13 @@
 // ==========================================
 // 🎮 故事收集家 - 游戏核心引擎（云同步版）
+// v3.0 — 彻底修复数据丢失问题
 // ==========================================
 
 // ===== 云同步配置 =====
-let currentUser=null; // 当前登录的用户昵称
-let selectedAvatar='👧'; // 选中的头像
-let syncTimer=null; // 自动同步定时器
+let currentUser=null;
+let selectedAvatar='👧';
+let syncTimer=null;
 const SYNC_STORAGE_PREFIX='storyGame_user_';
-
-// 云端存储API（jsonblob.com - 免费、无需注册）
 const JSONBLOB_API='https://jsonblob.com/api/jsonBlob';
 
 const W=['日','一','二','三','四','五','六'];
@@ -49,29 +48,37 @@ const STORIES={
     text:"🌊 太棒了！本周游泳课满两次，获得'水中精灵'称号！\n\n当你第二次从泳池出来时，水滴没有掉落——它们在你周围轻轻飘浮。\n\n\"是时候了，\"水之女神说，\"你就是水中精灵！\"\n\n你的故事里多了一个新角色——水之精灵。它会在你困难时化作泉水给你力量，开心时变成喷泉为你庆祝！\n\n✨ 水中精灵已加入你的故事伙伴团！"}
 };
 
-// ===== 游戏状态 =====
-let G={
-  date:new Date().toDateString(),jumpCount:0,swimDone:false,
-  tasks:{sport:false,homework:false,study:false,outdoor:false},
-  habits:{fast:false,tidy:false,polite:false},
-  gems:[],streak:0,weekly:{},
-  collected:[],myStories:[],
-  ach:{jumpHero:false,waterSpirit:false,storyDirector:false,goodHabit:false},
-  consJump:0,weekSwim:0,totalDays:0,dirUnlocked:false,
-  // 每日详细记录（用于查看历史）
-  history:{}
-};
+// ===== 生成一个干净的默认状态 =====
+function makeDefaultState(){
+  return {
+    date:null, // null 表示从未使用过，不是今天！
+    jumpCount:0,swimDone:false,
+    tasks:{sport:false,homework:false,study:false,outdoor:false},
+    habits:{fast:false,tidy:false,polite:false},
+    gems:[],streak:0,weekly:{},
+    collected:[],myStories:[],
+    ach:{jumpHero:false,waterSpirit:false,storyDirector:false,goodHabit:false},
+    consJump:0,weekSwim:0,totalDays:0,dirUnlocked:false,
+    history:{}
+  };
+}
 
+// ===== 游戏状态 =====
+let G=makeDefaultState();
+
+// ===== 保存 =====
 function save(){
   if(!currentUser)return;
-  // 保存当天的实时快照到 history（方便随时查看）
   if(!G.history) G.history={};
-  const dw=new Date().getDay();
-  const anyTaskDone=Object.values(G.tasks).some(v=>v);
-  const anyHabitDone=Object.values(G.habits).some(v=>v);
+  if(!G.weekly) G.weekly={};
+
   // 只在今天有实际打卡数据时才写入 history，避免空数据覆盖
+  const todayStr=new Date().toDateString();
+  const anyTaskDone=G.tasks&&Object.values(G.tasks).some(v=>v);
+  const anyHabitDone=G.habits&&Object.values(G.habits).some(v=>v);
   if(anyTaskDone||anyHabitDone||G.jumpCount>0||G.swimDone){
-    G.history[G.date]={
+    const dw=new Date().getDay();
+    G.history[todayStr]={
       tasks:{...G.tasks},
       habits:{...G.habits},
       jumpCount:G.jumpCount,
@@ -80,130 +87,173 @@ function save(){
       sportType:JUMP.includes(dw)?'jump':'swim',
       allDone:Object.values(G.tasks).every(v=>v)
     };
+    // 同时实时写入 weekly（不等跨天！这是关键修复）
+    if(!G.weekly[todayStr] || G.weekly[todayStr]===false){
+      const allDone=Object.values(G.tasks).every(v=>v);
+      G.weekly[todayStr]=allDone?true:'partial';
+    } else if(G.weekly[todayStr]==='partial'){
+      // 之前是 partial，检查是否已经全完成
+      const allDone=Object.values(G.tasks).every(v=>v);
+      if(allDone) G.weekly[todayStr]=true;
+    }
   }
+
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now()};
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v3'};
   localStorage.setItem(key,JSON.stringify(data));
   // 异步同步到云端
   cloudSave(data);
 }
 
+// ===== 加载 =====
 function load(){
   if(!currentUser)return;
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const s=localStorage.getItem(key);
-  if(s){
-    try{const d=JSON.parse(s);G={...G,...d};}catch(e){}
-  }
-  // 兼容旧版本：如果没有 history 字段则创建
-  if(!G.history) G.history={};
+  const raw=localStorage.getItem(key);
   
-  const today=new Date().toDateString();
-  if(G.date!==today){
-    // ====== 跨天处理 ======
-    const prevDate=G.date; // 昨天（或上次打开的日期）
-    
-    // 1. 保存上次打开那天的详细打卡记录到 history 和 weekly
-    const sportDone=G.tasks.sport;
-    const dw=new Date(prevDate).getDay();
-    const wasJumpDay=JUMP.includes(dw);
-    const prevTasks={...G.tasks};
-    const prevHabits={...G.habits};
-    
-    // 先保存到 history（保留详细记录）
-    G.history[prevDate]={
-      tasks:prevTasks,
-      habits:prevHabits,
-      jumpCount:G.jumpCount,
-      swimDone:G.swimDone,
-      gems:[...G.gems],
-      sportType:wasJumpDay?'jump':'swim',
-      allDone:Object.values(prevTasks).every(v=>v)
-    };
-    
-    // 2. 写入 weekly 记录（如果还没有的话）
-    const anyTaskDone=Object.values(prevTasks).some(v=>v);
-    const allTaskDone=Object.values(prevTasks).every(v=>v);
-    if(!G.weekly[prevDate]){
-      // 之前没记录过这天
-      if(allTaskDone){
-        G.weekly[prevDate]=true;
-      }else if(anyTaskDone){
-        G.weekly[prevDate]='partial';
-      }else{
-        G.weekly[prevDate]=false;
-      }
+  // 从一个干净的默认状态开始
+  G=makeDefaultState();
+  
+  if(raw){
+    try{
+      const d=JSON.parse(raw);
+      // 逐字段安全合并，不用展开覆盖
+      if(d.date) G.date=d.date;
+      if(typeof d.jumpCount==='number') G.jumpCount=d.jumpCount;
+      if(typeof d.swimDone==='boolean') G.swimDone=d.swimDone;
+      if(d.tasks&&typeof d.tasks==='object') G.tasks={...G.tasks,...d.tasks};
+      if(d.habits&&typeof d.habits==='object') G.habits={...G.habits,...d.habits};
+      if(Array.isArray(d.gems)) G.gems=[...d.gems];
+      if(typeof d.streak==='number') G.streak=d.streak;
+      if(d.weekly&&typeof d.weekly==='object') G.weekly={...d.weekly};
+      if(Array.isArray(d.collected)) G.collected=[...d.collected];
+      if(Array.isArray(d.myStories)) G.myStories=[...d.myStories];
+      if(d.ach&&typeof d.ach==='object') G.ach={...G.ach,...d.ach};
+      if(typeof d.consJump==='number') G.consJump=d.consJump;
+      if(typeof d.weekSwim==='number') G.weekSwim=d.weekSwim;
+      if(typeof d.totalDays==='number') G.totalDays=d.totalDays;
+      if(typeof d.dirUnlocked==='boolean') G.dirUnlocked=d.dirUnlocked;
+      if(d.history&&typeof d.history==='object') G.history={...d.history};
+    }catch(e){
+      console.error('[load] JSON解析错误',e);
     }
-    
-    // 3. 重置今日数据
-    G.jumpCount=0;
-    G.swimDone=false;
-    G.tasks={sport:false,homework:false,study:false,outdoor:false};
-    G.habits={fast:false,tidy:false,polite:false};
-    G.gems=[];
-    G.date=today;
-    
-    // 4. 重置每日型成就（goodHabit 每天需要重新达成）
-    G.ach.goodHabit=false;
-    
-    // 5. 跨天后再执行数据修复（从 weekly/history 重算 totalDays 和 streak）
-    repairData();
-    
-    save();
-  } else {
-    // 同一天内打开，也做一次数据修复
-    repairData();
   }
+
+  console.log('[load] 加载完成, date=',G.date,', weekly keys=',Object.keys(G.weekly).length,', history keys=',Object.keys(G.history).length);
+  
+  // 跨天处理
+  const today=new Date().toDateString();
+  if(G.date && G.date!==today){
+    console.log('[load] 检测到跨天: 上次=',G.date,', 今天=',today);
+    handleDayChange(G.date, today);
+  } else if(!G.date){
+    // 全新用户，直接设置为今天
+    G.date=today;
+  }
+  
+  // 数据修复（无论是否跨天都执行）
+  repairData();
+  
+  // 保存修复后的数据
+  save();
 }
 
-// ====== 数据修复引擎 ======
-// 从 weekly 和 history 中重新计算 totalDays 和 streak
-// 解决旧版BUG导致数据被错误清零的问题
-function repairData(){
-  // ---- 第一步：确保 history 中的有效记录都同步到 weekly ----
-  if(G.history){
-    const histKeys=Object.keys(G.history);
-    histKeys.forEach(dateStr=>{
-      const h=G.history[dateStr];
-      if(h&&h.tasks){
-        const anyDone=Object.values(h.tasks).some(v=>v);
-        if(anyDone && !G.weekly[dateStr]){
-          // history 有打卡记录但 weekly 中没有，补上
-          const allDone=Object.values(h.tasks).every(v=>v);
-          G.weekly[dateStr]=allDone?true:'partial';
-          console.log('[数据修复] 从 history 恢复 weekly 记录:',dateStr);
-        }
-      }
-    });
+// ===== 跨天处理（独立函数，逻辑清晰） =====
+function handleDayChange(prevDate, today){
+  console.log('[跨天] 从',prevDate,'到',today);
+  
+  // 第一步：确保上次的打卡数据保存到 history
+  const prevTasks=G.tasks?{...G.tasks}:{sport:false,homework:false,study:false,outdoor:false};
+  const prevHabits=G.habits?{...G.habits}:{fast:false,tidy:false,polite:false};
+  const anyTaskDone=Object.values(prevTasks).some(v=>v);
+  
+  if(prevDate){
+    const dw=new Date(prevDate).getDay();
+    const wasJumpDay=JUMP.includes(dw);
+    
+    // 写入 history
+    if(!G.history) G.history={};
+    // 只有有打卡数据时才覆盖（防止空数据覆盖有效记录）
+    if(anyTaskDone || G.jumpCount>0 || G.swimDone){
+      G.history[prevDate]={
+        tasks:prevTasks,
+        habits:prevHabits,
+        jumpCount:G.jumpCount||0,
+        swimDone:G.swimDone||false,
+        gems:G.gems?[...G.gems]:[],
+        sportType:wasJumpDay?'jump':'swim',
+        allDone:Object.values(prevTasks).every(v=>v)
+      };
+      console.log('[跨天] 保存 history['+prevDate+']', JSON.stringify(prevTasks));
+    }
+    
+    // 写入 weekly
+    if(!G.weekly) G.weekly={};
+    const allTaskDone=Object.values(prevTasks).every(v=>v);
+    // 只向上升级，不向下降级（避免覆盖已有的 true/partial）
+    if(allTaskDone){
+      G.weekly[prevDate]=true;
+    }else if(anyTaskDone){
+      if(G.weekly[prevDate]!==true) G.weekly[prevDate]='partial';
+    }
+    // 如果什么都没完成且之前也没记录，标记 false
+    if(!anyTaskDone && G.weekly[prevDate]===undefined){
+      G.weekly[prevDate]=false;
+    }
+    console.log('[跨天] weekly['+prevDate+']=',G.weekly[prevDate]);
   }
   
-  // ---- 第二步：统计 totalDays（所有有效打卡天数） ----
-  const weeklyKeys=Object.keys(G.weekly);
-  let realTotalDays=0;
-  weeklyKeys.forEach(dateStr=>{
-    const val=G.weekly[dateStr];
-    if(val===true||val==='partial'){
-      realTotalDays++;
+  // 第二步：重置今日数据
+  G.jumpCount=0;
+  G.swimDone=false;
+  G.tasks={sport:false,homework:false,study:false,outdoor:false};
+  G.habits={fast:false,tidy:false,polite:false};
+  G.gems=[];
+  G.date=today;
+  G.ach.goodHabit=false;
+  
+  console.log('[跨天] 完成，今日数据已重置');
+}
+
+// ===== 数据修复引擎 =====
+function repairData(){
+  if(!G.history) G.history={};
+  if(!G.weekly) G.weekly={};
+  
+  // 第一步：确保 history 中的所有有效记录都同步到 weekly
+  Object.keys(G.history).forEach(dateStr=>{
+    const h=G.history[dateStr];
+    if(h&&h.tasks){
+      const anyDone=Object.values(h.tasks).some(v=>v);
+      if(anyDone){
+        const allDone=Object.values(h.tasks).every(v=>v);
+        const newVal=allDone?true:'partial';
+        // 只向上升级
+        if(!G.weekly[dateStr]||G.weekly[dateStr]===false||
+           (G.weekly[dateStr]==='partial'&&newVal===true)){
+          G.weekly[dateStr]=newVal;
+        }
+      }
     }
   });
   
-  // 如果计算出来的比存的大，修复它
-  if(realTotalDays>G.totalDays){
-    console.log('[数据修复] totalDays 从',G.totalDays,'修复为',realTotalDays);
+  // 第二步：重新统计 totalDays
+  let realTotalDays=0;
+  Object.keys(G.weekly).forEach(dateStr=>{
+    const val=G.weekly[dateStr];
+    if(val===true||val==='partial') realTotalDays++;
+  });
+  
+  if(realTotalDays!==G.totalDays){
+    console.log('[修复] totalDays:',G.totalDays,'→',realTotalDays);
     G.totalDays=realTotalDays;
   }
   
-  // ---- 第三步：重新计算 streak（连续打卡天数） ----
-  // 从昨天往回数（今天还没跨天写入 weekly，所以不算）
+  // 第三步：重新计算 streak
   const today=new Date();
-  const todayStr=today.toDateString();
-  
-  // 确定起始日期：如果今天在 weekly 中有记录，从今天开始；否则从昨天开始
   let checkDate=new Date(today);
-  const todayInWeekly=G.weekly[todayStr]===true||G.weekly[todayStr]==='partial';
-  if(!todayInWeekly){
-    checkDate.setDate(checkDate.getDate()-1);
-  }
+  // 从昨天开始往回数（今天可能还没完成）
+  checkDate.setDate(checkDate.getDate()-1);
   
   let realStreak=0;
   for(let i=0;i<365;i++){
@@ -217,13 +267,25 @@ function repairData(){
     }
   }
   
-  if(realStreak>G.streak){
-    console.log('[数据修复] streak 从',G.streak,'修复为',realStreak);
+  // 也检查今天是否已有记录
+  const todayStr=today.toDateString();
+  if(G.weekly[todayStr]===true||G.weekly[todayStr]==='partial'){
+    // 今天也有记录，加到连续中（如果昨天也有）
+    if(realStreak>0){
+      realStreak++; // 昨天有+今天有 = 连续+1
+    }else{
+      realStreak=1; // 只有今天
+    }
+  }
+  
+  // streak 总是取最新计算的值（不只是"更大时"修复）
+  if(realStreak!==G.streak){
+    console.log('[修复] streak:',G.streak,'→',realStreak);
     G.streak=realStreak;
   }
 }
 
-// ===== 超时 fetch 工具函数 =====
+// ===== 超时 fetch =====
 function fetchWithTimeout(url, options={}, timeout=5000){
   return Promise.race([
     fetch(url, options),
@@ -231,7 +293,7 @@ function fetchWithTimeout(url, options={}, timeout=5000){
   ]);
 }
 
-// ===== 云端存储（使用免费的 jsonblob.com） =====
+// ===== 云端存储 =====
 async function cloudSave(data){
   try{
     updateSyncUI('syncing');
@@ -263,6 +325,7 @@ async function cloudSave(data){
   }
 }
 
+// ===== 云端加载（修复：不再覆盖本地数据，而是智能合并） =====
 async function cloudLoad(){
   try{
     updateSyncUI('syncing');
@@ -274,16 +337,71 @@ async function cloudLoad(){
     if(resp.ok){
       const data=await resp.json();
       if(data&&data._user===currentUser){
-        const localKey=SYNC_STORAGE_PREFIX+currentUser;
-        const localStr=localStorage.getItem(localKey);
-        let localData=null;
-        try{localData=localStr?JSON.parse(localStr):null;}catch(e){}
-        if(!localData||!localData._lastSync||data._lastSync>localData._lastSync){
-          G={...G,...data};
-          localStorage.setItem(localKey,JSON.stringify(data));
-          updateSyncUI('done');
-          return true;
+        // 智能合并：只合并 history 和 weekly 中本地没有的记录
+        let merged=false;
+        if(data.history){
+          Object.keys(data.history).forEach(dateStr=>{
+            if(!G.history[dateStr]){
+              G.history[dateStr]=data.history[dateStr];
+              merged=true;
+            }
+          });
         }
+        if(data.weekly){
+          Object.keys(data.weekly).forEach(dateStr=>{
+            const cloudVal=data.weekly[dateStr];
+            const localVal=G.weekly[dateStr];
+            // 云端有而本地没有，或云端比本地"更完整"
+            if(localVal===undefined||localVal===false){
+              if(cloudVal===true||cloudVal==='partial'){
+                G.weekly[dateStr]=cloudVal;
+                merged=true;
+              }
+            }else if(localVal==='partial'&&cloudVal===true){
+              G.weekly[dateStr]=true;
+              merged=true;
+            }
+          });
+        }
+        // 合并 collected 和 myStories（去重）
+        if(Array.isArray(data.collected)){
+          const existingTitles=new Set(G.collected.map(s=>s.title+s.date));
+          data.collected.forEach(s=>{
+            if(!existingTitles.has(s.title+s.date)){
+              G.collected.push(s);
+              merged=true;
+            }
+          });
+        }
+        if(Array.isArray(data.myStories)){
+          const existingStories=new Set(G.myStories.map(s=>s.text));
+          data.myStories.forEach(s=>{
+            if(!existingStories.has(s.text)){
+              G.myStories.push(s);
+              merged=true;
+            }
+          });
+        }
+        // 成就只向上合并（如果云端解锁了本地没有的）
+        if(data.ach){
+          Object.keys(data.ach).forEach(k=>{
+            if(data.ach[k]&&!G.ach[k]){
+              G.ach[k]=true;
+              merged=true;
+            }
+          });
+        }
+        if(data.dirUnlocked&&!G.dirUnlocked){G.dirUnlocked=true;merged=true;}
+        
+        if(merged){
+          console.log('[cloudLoad] 云端数据已合并');
+          repairData();
+          save();
+          // 刷新界面
+          initGame();
+        }
+        updateSyncUI('done');
+        return merged;
       }
     }
     updateSyncUI('done');
@@ -311,7 +429,6 @@ function updateSyncUI(status){
 }
 
 // ===== 登录 =====
-// 固定账号配置
 const ACCOUNT_NAME='棠棠';
 const ACCOUNT_PWD='2068';
 const ACCOUNT_AVATAR='👧';
@@ -328,30 +445,27 @@ async function doLogin(){
     showLoginHint('密码不对哦，再试试~ ❌');
     input.value='';
     input.focus();
-    // 密码错误时抖动效果
     const card=document.querySelector('.login-card');
     card.style.animation='none';
-    card.offsetHeight; // 触发 reflow
+    card.offsetHeight;
     card.style.animation='loginShake 0.5s ease';
     return;
   }
   
-  // 显示加载状态
   const btn=document.getElementById('loginBtn');
   btn.disabled=true;
   btn.textContent='⏳ 正在进入冒险世界...';
   
   currentUser=ACCOUNT_NAME;
   selectedAvatar=ACCOUNT_AVATAR;
-  // 保存登录状态和版本标记
   localStorage.setItem('storyGame_currentUser',ACCOUNT_NAME);
   localStorage.setItem('storyGame_currentAvatar',ACCOUNT_AVATAR);
-  localStorage.setItem('storyGame_loginVer','v2');
+  localStorage.setItem('storyGame_loginVer','v3');
   
-  // 先从本地加载
+  // 加载数据
   load();
   
-  // 尝试云端加载（不阻塞登录流程）
+  // 异步云端合并（不会覆盖本地数据）
   cloudLoad().catch(()=>{});
   
   // 显示游戏界面
@@ -359,45 +473,30 @@ async function doLogin(){
   document.getElementById('appContainer').style.display='';
   document.querySelector('.bottom-nav').style.display='';
   
-  // 设置头像和名称
   document.querySelector('.avatar').textContent=ACCOUNT_AVATAR;
   const crown=document.getElementById('crownIcon');
   if(crown)document.querySelector('.avatar').innerHTML=ACCOUNT_AVATAR+'<span class="crown" id="crownIcon" '+(G.totalDays>=7?'':'style="display:none"')+'>👑</span>';
   document.getElementById('playerName').textContent=ACCOUNT_NAME;
   
-  // 初始化界面
   initGame();
   
-  // 恢复按钮状态（以防下次用到）
   btn.disabled=false;
   btn.textContent='🚀 开始冒险！';
   
-  // 开启自动同步（每30秒同步一次）
   if(syncTimer)clearInterval(syncTimer);
   syncTimer=setInterval(()=>{
-    if(currentUser)cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now()});
+    if(currentUser)cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v3'});
   },30000);
 }
 
 function doLogout(){
   if(confirm('确定要退出登录吗？')){
-    // 先保存当前数据
-    save();
+    save(); // 先保存
     currentUser=null;
     localStorage.removeItem('storyGame_currentUser');
     if(syncTimer){clearInterval(syncTimer);syncTimer=null;}
-    // 重置G
-    G={
-      date:new Date().toDateString(),jumpCount:0,swimDone:false,
-      tasks:{sport:false,homework:false,study:false,outdoor:false},
-      habits:{fast:false,tidy:false,polite:false},
-      gems:[],streak:0,weekly:{},
-      collected:[],myStories:[],
-      ach:{jumpHero:false,waterSpirit:false,storyDirector:false,goodHabit:false},
-      consJump:0,weekSwim:0,totalDays:0,dirUnlocked:false,
-      history:{}
-    };
-    // 显示登录页
+    // 重置 G 为干净状态（不清除 localStorage 中保存的数据！）
+    G=makeDefaultState();
     document.getElementById('loginOverlay').style.display='';
     document.getElementById('appContainer').style.display='none';
     document.querySelector('.bottom-nav').style.display='none';
@@ -412,7 +511,7 @@ function showLoginHint(msg){
   setTimeout(()=>{h.style.opacity=0},3000);
 }
 
-// ===== 彩虹闪光粒子 🦄 =====
+// ===== 彩虹闪光粒子 =====
 function createStars(){
   const c=document.getElementById('starsContainer');c.innerHTML='';
   const colors=['#FF6FB7','#A855F7','#4A7CF7','#FFD700','#22D3EE','#FB7185','#60A5FA','#FBBF24','#34D399','#DA77F2'];
@@ -450,8 +549,7 @@ function renderDateNav(){
     const isToday=ds===today.toDateString();
     const isFuture=d>today&&!isToday;
     const dw=d.getDay(),isJ=JUMP.includes(dw),isS=SWIM.includes(dw);
-    const status=G.weekly[ds]; // true=全完成, 'partial'=部分完成, false=未完成, undefined=未到
-    const hist=G.history&&G.history[ds];
+    const status=G.weekly[ds];
     const div=document.createElement('div');
     let cls='day-item';
     if(isToday)cls+=' active';
@@ -462,7 +560,6 @@ function renderDateNav(){
     if(isFuture)cls+=' future';
     div.className=cls;
     
-    // 状态图标
     let statusIcon='';
     if(isToday){
       statusIcon='';
@@ -476,17 +573,12 @@ function renderDateNav(){
     
     div.innerHTML=`<div class="dn">周${W[dw]}</div><div class="dd">${d.getDate()}</div>${statusIcon}`;
     
-    // 点击查看历史（非未来日期）
     if(!isFuture){
       div.style.cursor='pointer';
       div.onclick=(function(dateStr,isT){
         return function(){
-          if(isT){
-            // 点击今天：关闭历史面板
-            closeHistoryPanel();
-          }else{
-            showHistoryDetail(dateStr);
-          }
+          if(isT) closeHistoryPanel();
+          else showHistoryDetail(dateStr);
         };
       })(ds,isToday);
     }
@@ -501,13 +593,11 @@ function showHistoryDetail(dateStr){
   const dw=d.getDay();
   const dateLabel=`${d.getMonth()+1}月${d.getDate()}日 周${W[dw]}`;
   
-  // 如果面板不存在则创建
   let panel=document.getElementById('historyPanel');
   if(!panel){
     panel=document.createElement('div');
     panel.id='historyPanel';
     panel.className='card history-panel';
-    // 插入到日期导航后面
     const dateNav=document.getElementById('dateNav');
     dateNav.parentNode.insertBefore(panel,dateNav.nextSibling);
   }
@@ -673,19 +763,19 @@ function addJump(n){
   if(G.tasks.sport)return;
   G.jumpCount=Math.max(0,G.jumpCount+n);
   if(G.jumpCount>=1000){G.jumpCount=1000;G.tasks.sport=true;G.consJump++;gemAnim('🧡');checkJumpHero()}
-  renderSport();renderGems();renderTasks();renderStoryProg();save();
+  renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();save();
 }
-function completeJump(){G.jumpCount=1000;G.tasks.sport=true;G.consJump++;gemAnim('🧡');renderSport();renderGems();renderTasks();renderStoryProg();checkJumpHero();save()}
+function completeJump(){G.jumpCount=1000;G.tasks.sport=true;G.consJump++;gemAnim('🧡');renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();checkJumpHero();save()}
 function completeSwim(){
   if(G.swimDone)return;G.swimDone=true;G.tasks.sport=true;G.weekSwim++;
-  gemAnim('💙');renderSport();renderGems();renderTasks();renderStoryProg();checkWaterSpirit();save();
+  gemAnim('💙');renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();checkWaterSpirit();save();
 }
 function toggleTask(k){
-  if(k==='outdoor')return; // outdoor由行为习惯模块控制
+  if(k==='outdoor')return;
   G.tasks[k]=!G.tasks[k];
   if(G.tasks[k]){const m={homework:'💜',study:'💛'};if(m[k])gemAnim(m[k]);if(!G.gems.includes(k))G.gems.push(k)}
   else G.gems=G.gems.filter(g=>g!==k);
-  renderGems();renderTasks();renderStoryProg();save();
+  renderGems();renderTasks();renderStoryProg();updateStatus();save();
 }
 
 // ===== 动画 =====
@@ -693,7 +783,6 @@ function gemAnim(g){
   const el=document.createElement('div');el.className='gem-fly';el.textContent=g;
   el.style.left=(innerWidth/2-24)+'px';el.style.top=(innerHeight/2)+'px';
   document.body.appendChild(el);setTimeout(()=>el.remove(),1200);
-  // 更多更大的掉落装饰
   for(let i=0;i<16;i++)setTimeout(()=>{
     const c=document.createElement('div');c.className='confetti';
     c.textContent=['✨','⭐','💫','🌈','🦄','🎀','💖','🔮','👑','🌟','💎','🎆'][~~(Math.random()*12)];
@@ -702,7 +791,6 @@ function gemAnim(g){
     c.style.fontSize=(28+Math.random()*20)+'px';
     document.body.appendChild(c);setTimeout(()=>c.remove(),3000);
   },i*60);
-  // 放一朵烟花
   setTimeout(()=>launchFirework(innerWidth*0.3+Math.random()*innerWidth*0.4, innerHeight*0.2+Math.random()*innerHeight*0.3),300);
 }
 function bigConfetti(){
@@ -714,24 +802,21 @@ function bigConfetti(){
     c.style.fontSize=(30+Math.random()*24)+'px';
     document.body.appendChild(c);setTimeout(()=>c.remove(),3500);
   },i*60);
-  // 放3朵烟花
   for(let i=0;i<3;i++){
     setTimeout(()=>launchFirework(innerWidth*(0.2+Math.random()*0.6), innerHeight*(0.15+Math.random()*0.35)),400+i*500);
   }
 }
 
-// ===== 烟花效果 🎆 =====
+// ===== 烟花效果 =====
 function launchFirework(x,y){
   const colors=['#FF6FB7','#A855F7','#4A7CF7','#FFD700','#22D3EE','#FB7185','#34D399','#FBBF24','#DA77F2','#F43F5E'];
   const color1=colors[~~(Math.random()*colors.length)];
   const color2=colors[~~(Math.random()*colors.length)];
-  // 扩散光环
   const ring=document.createElement('div');
   ring.className='firework-ring';
   ring.style.left=(x-5)+'px';ring.style.top=(y-5)+'px';
   ring.style.borderColor=color1;
   document.body.appendChild(ring);setTimeout(()=>ring.remove(),900);
-  // 粒子爆炸
   const count=18+~~(Math.random()*10);
   for(let i=0;i<count;i++){
     const p=document.createElement('div');
@@ -813,24 +898,20 @@ function renderAch(){
 // ===== 宝箱 =====
 function renderTreasure(){
   const d=document.getElementById('treasureDays');d.innerHTML='';
-  // 计算有效天数：totalDays + 今天是否正在打卡
   let displayDays=G.totalDays;
   const todayHasProgress=Object.values(G.tasks).some(v=>v);
-  // 如果今天有打卡进度但还没算入 totalDays（因为还没跨天），临时+1显示
   const todayStr=new Date().toDateString();
   const todayInWeekly=G.weekly[todayStr]===true||G.weekly[todayStr]==='partial';
   if(todayHasProgress&&!todayInWeekly){
-    displayDays=Math.max(displayDays, G.totalDays+1);
+    displayDays=G.totalDays+1;
   }
   
   for(let i=0;i<7;i++){
     const div=document.createElement('div');
     if(i<G.totalDays){
-      // 已确认的打卡天
       div.className='t-day on';
       div.textContent='💎';
     }else if(i===G.totalDays&&todayHasProgress&&!todayInWeekly){
-      // 今天正在打卡中（闪烁效果）
       div.className='t-day on today-progress';
       div.textContent='💎';
     }else{
@@ -840,7 +921,7 @@ function renderTreasure(){
     d.appendChild(div);
   }
   const btn=document.getElementById('btnChest');
-  if(G.totalDays>=7||displayDays>=7){
+  if(displayDays>=7){
     btn.disabled=false;
     btn.textContent='🎉 开启成长宝箱！';
     document.getElementById('treasureChest').textContent='🎁';
@@ -885,7 +966,7 @@ function showCollectedStory(idx){
   if(s)showStoryModal({title:s.title,text:s.text,choices:[]});
 }
 
-// ===== 行为习惯 ⭐ =====
+// ===== 行为习惯 =====
 function renderHabits(){
   const l=document.getElementById('habitsList');
   if(!l)return;
@@ -921,18 +1002,17 @@ function toggleHabit(k){
     G.gems=G.gems.filter(g=>g!=='outdoor');
     renderGems();renderTasks();renderStoryProg();
   }
-  renderHabits();save();
+  renderHabits();updateStatus();save();
 }
 
 // ===== 状态栏 =====
 function updateStatus(){
-  // 连续天数：如果今天有打卡但还没跨天写入，显示 streak+1
   const todayHasProgress=Object.values(G.tasks).some(v=>v);
   const todayStr=new Date().toDateString();
   const todayInWeekly=G.weekly[todayStr]===true||G.weekly[todayStr]==='partial';
   let displayStreak=G.streak;
   if(todayHasProgress&&!todayInWeekly){
-    displayStreak=G.streak+1;
+    displayStreak=Math.max(G.streak+1,1);
   }
   document.getElementById('streakCount').textContent=displayStreak;
   
@@ -955,34 +1035,28 @@ function initGame(){
   createStars();renderDateNav();renderSport();renderGems();renderTasks();renderStoryProg();renderHabits();renderAch();renderTreasure();updateStatus();
 }
 
-// 启动：检查是否已登录
+// ===== 启动 =====
 (async function startup(){
-  createStars(); // 先创建背景粒子
-  // 版本标记：v2 表示密码登录版本，旧版本没有这个标记需要重新验证密码
+  createStars();
   const loginVer=localStorage.getItem('storyGame_loginVer');
   if(!loginVer||loginVer<'v2'){
-    // 旧版本登录状态，清除并要求重新输密码
     localStorage.removeItem('storyGame_currentUser');
     localStorage.removeItem('storyGame_currentAvatar');
   }
   const savedUser=localStorage.getItem('storyGame_currentUser');
   if(savedUser===ACCOUNT_NAME){
-    // 自动登录（之前已验证过密码）
     currentUser=ACCOUNT_NAME;
     selectedAvatar=ACCOUNT_AVATAR;
     
-    // 先从本地加载（立即生效）
     load();
     
-    // 异步尝试云端加载（不阻塞界面显示）
+    // 异步云端合并（安全合并，不会覆盖本地）
     cloudLoad().catch(()=>{});
     
-    // 显示游戏界面
     document.getElementById('loginOverlay').style.display='none';
     document.getElementById('appContainer').style.display='';
     document.querySelector('.bottom-nav').style.display='';
     
-    // 设置头像和名称
     document.querySelector('.avatar').textContent=ACCOUNT_AVATAR;
     const crown=document.getElementById('crownIcon');
     if(crown)document.querySelector('.avatar').innerHTML=ACCOUNT_AVATAR+'<span class="crown" id="crownIcon" '+(G.totalDays>=7?'':'style="display:none"')+'>👑</span>';
@@ -990,19 +1064,16 @@ function initGame(){
     
     initGame();
     
-    // 开启自动同步
     if(syncTimer)clearInterval(syncTimer);
     syncTimer=setInterval(()=>{
-      if(currentUser)cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now()});
+      if(currentUser)cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v3'});
     },30000);
   }else{
-    // 显示登录页，隐藏游戏
     document.getElementById('loginOverlay').style.display='';
     document.getElementById('appContainer').style.display='none';
     document.querySelector('.bottom-nav').style.display='none';
     document.getElementById('passwordInput').focus();
   }
-  // 监听回车键
   document.getElementById('passwordInput').addEventListener('keypress',function(e){
     if(e.key==='Enter')doLogin();
   });
