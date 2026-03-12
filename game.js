@@ -554,7 +554,7 @@ function showHistoryDetail(dateStr){
   if(hist.habits){
     const habitLabels=[
       {k:'fast',e:'⚡',t:'做事快速不拖拉'},
-      {k:'tidy',e:'🧹',t:'自己的事情自己做'},
+      {k:'tidy',e:'💊',t:'吃完钙片和维生素D'},
       {k:'polite',e:'💝',t:'有礼貌、好态度'}
     ];
     habitLabels.forEach(hl=>{
@@ -897,7 +897,7 @@ function renderHabits(){
   if(!l)return;
   const habits=[
     {k:'fast',e:'⚡',t:'做事快速不拖拉',d:'行动力满满，说做就做！'},
-    {k:'tidy',e:'🧹',t:'自己的事情自己做',d:'整理书包、收拾房间、自律自觉'},
+    {k:'tidy',e:'💊',t:'吃完钙片和维生素D',d:'每天按时吃钙片和维生素D，长高高！'},
     {k:'polite',e:'💝',t:'有礼貌、好态度',d:'对人友善，积极乐观，不发脾气'}
   ];
   l.innerHTML=habits.map(h=>{
@@ -917,7 +917,7 @@ function toggleHabit(k){
     G.tasks.outdoor=true;
     gemAnim('💚');
     renderGems();renderTasks();renderStoryProg();
-    setTimeout(()=>showAchModal('🌟 好习惯之星！',{text:'🎉 太棒了！\n\n你今天的行为习惯全部达标！\n\n做事快速不拖拉 ⚡\n自己的事情自己做 🧹\n有礼貌好态度 💝\n\n你就是最闪亮的好习惯之星！继续保持哦！✨'}),600);
+    setTimeout(()=>showAchModal('🌟 好习惯之星！',{text:'🎉 太棒了！\n\n你今天的行为习惯全部达标！\n\n做事快速不拖拉 ⚡\n吃完钙片和维生素D 💊\n有礼貌好态度 💝\n\n你就是最闪亮的好习惯之星！继续保持哦！✨'}),600);
     renderAch();
   } else if(allDone){
     G.tasks.outdoor=true;
