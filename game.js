@@ -93,6 +93,9 @@ function load(){
   // 兼容旧版本：如果没有 history 字段则创建
   if(!G.history) G.history={};
   
+  // ====== 数据修复：从 weekly/history 重新计算 totalDays 和 streak ======
+  repairData();
+  
   const today=new Date().toDateString();
   if(G.date!==today){
     // ====== 跨天处理 ======
@@ -113,14 +116,15 @@ function load(){
     };
     
     // 2. 计算连续天数和总天数
-    // 只要运动打卡了（核心任务）就算有效天
+    // 只要有任何一个任务完成了就算有效天（更宽容的判定）
+    const anyTaskDone=Object.values(G.tasks).some(v=>v);
     const yesterdayAllDone=Object.values(G.tasks).every(v=>v);
     if(yesterdayAllDone){
       G.streak++;
       G.totalDays++;
       G.weekly[prevDate]=true;
-    }else if(sportDone){
-      // 运动完成了但其他没全完成，保持连续但不加总天数里的"全完成"标记
+    }else if(anyTaskDone){
+      // 有任何任务完成了，保持连续天数
       G.streak++;
       G.totalDays++;
       G.weekly[prevDate]='partial'; // 部分完成
@@ -141,6 +145,87 @@ function load(){
     G.ach.goodHabit=false;
     
     save();
+  }
+}
+
+// ====== 数据修复引擎 ======
+// 从 weekly 和 history 中重新计算 totalDays 和 streak
+// 解决旧版BUG导致数据被错误清零的问题
+function repairData(){
+  // 1. 重新计算 totalDays：统计 weekly 中所有有效打卡日
+  const weeklyKeys=Object.keys(G.weekly);
+  let realTotalDays=0;
+  weeklyKeys.forEach(dateStr=>{
+    const val=G.weekly[dateStr];
+    if(val===true||val==='partial'){
+      realTotalDays++;
+    }
+  });
+  
+  // 也从 history 中找额外的有效天（防止 weekly 丢失但 history 还在）
+  if(G.history){
+    const histKeys=Object.keys(G.history);
+    histKeys.forEach(dateStr=>{
+      const h=G.history[dateStr];
+      if(h&&h.tasks){
+        const anyDone=Object.values(h.tasks).some(v=>v);
+        if(anyDone && !G.weekly[dateStr]){
+          // history 有记录但 weekly 中没有，补上
+          const allDone=Object.values(h.tasks).every(v=>v);
+          G.weekly[dateStr]=allDone?true:'partial';
+          realTotalDays++;
+        }
+      }
+    });
+  }
+  
+  // 如果计算出来的 totalDays 比存的大，说明被旧BUG清零了，修复它
+  if(realTotalDays>G.totalDays){
+    console.log('[数据修复] totalDays 从',G.totalDays,'修复为',realTotalDays);
+    G.totalDays=realTotalDays;
+  }
+  
+  // 2. 重新计算 streak：从今天往回数，连续有记录的天数
+  const today=new Date();
+  let checkDate=new Date(today);
+  // 如果今天有打卡记录（当天任务有完成的），从今天开始算
+  // 否则从昨天开始算
+  const todayStr=today.toDateString();
+  const todayHasRecord=G.weekly[todayStr]===true||G.weekly[todayStr]==='partial'||
+    (G.tasks&&Object.values(G.tasks).some(v=>v));
+  
+  if(!todayHasRecord){
+    checkDate.setDate(checkDate.getDate()-1);
+  }
+  
+  let realStreak=0;
+  for(let i=0;i<365;i++){
+    const ds=checkDate.toDateString();
+    const val=G.weekly[ds];
+    if(val===true||val==='partial'){
+      realStreak++;
+      checkDate.setDate(checkDate.getDate()-1);
+    }else{
+      break;
+    }
+  }
+  
+  // 如果今天有在打卡（tasks有完成的），也算连续中的一天
+  if(todayHasRecord && G.date===todayStr && !G.weekly[todayStr]){
+    // 今天还没跨天写入 weekly，但确实有任务完成了
+    // 检查昨天是否也有记录
+    const yesterday=new Date(today);
+    yesterday.setDate(yesterday.getDate()-1);
+    const yVal=G.weekly[yesterday.toDateString()];
+    if(yVal===true||yVal==='partial'||realStreak>0){
+      // 昨天有记录，今天也在打卡中，连续天数 = 历史streak + 1
+      realStreak=Math.max(realStreak, realStreak>0?realStreak:1);
+    }
+  }
+  
+  if(realStreak>G.streak){
+    console.log('[数据修复] streak 从',G.streak,'修复为',realStreak);
+    G.streak=realStreak;
   }
 }
 
@@ -734,10 +819,41 @@ function renderAch(){
 // ===== 宝箱 =====
 function renderTreasure(){
   const d=document.getElementById('treasureDays');d.innerHTML='';
-  for(let i=0;i<7;i++){const div=document.createElement('div');div.className='t-day'+(i<G.totalDays?' on':'');div.textContent=i<G.totalDays?'💎':(i+1);d.appendChild(div)}
+  // 计算有效天数：totalDays + 今天是否正在打卡
+  let displayDays=G.totalDays;
+  const todayHasProgress=Object.values(G.tasks).some(v=>v);
+  // 如果今天有打卡进度但还没算入 totalDays（因为还没跨天），临时+1显示
+  const todayStr=new Date().toDateString();
+  const todayInWeekly=G.weekly[todayStr]===true||G.weekly[todayStr]==='partial';
+  if(todayHasProgress&&!todayInWeekly){
+    displayDays=Math.max(displayDays, G.totalDays+1);
+  }
+  
+  for(let i=0;i<7;i++){
+    const div=document.createElement('div');
+    if(i<G.totalDays){
+      // 已确认的打卡天
+      div.className='t-day on';
+      div.textContent='💎';
+    }else if(i===G.totalDays&&todayHasProgress&&!todayInWeekly){
+      // 今天正在打卡中（闪烁效果）
+      div.className='t-day on today-progress';
+      div.textContent='💎';
+    }else{
+      div.className='t-day';
+      div.textContent=i+1;
+    }
+    d.appendChild(div);
+  }
   const btn=document.getElementById('btnChest');
-  if(G.totalDays>=7){btn.disabled=false;btn.textContent='🎉 开启成长宝箱！';document.getElementById('treasureChest').textContent='🎁'}
-  else{btn.disabled=true;btn.textContent=`🔒 还需 ${7-G.totalDays} 天`}
+  if(G.totalDays>=7||displayDays>=7){
+    btn.disabled=false;
+    btn.textContent='🎉 开启成长宝箱！';
+    document.getElementById('treasureChest').textContent='🎁';
+  }else{
+    btn.disabled=true;
+    btn.textContent=`🔒 还需 ${7-displayDays} 天`;
+  }
   if(G.dirUnlocked)document.getElementById('directorMode').classList.add('show');
   renderMyStories();renderCollected();
 }
@@ -816,15 +932,28 @@ function toggleHabit(k){
 
 // ===== 状态栏 =====
 function updateStatus(){
-  document.getElementById('streakCount').textContent=G.streak;
+  // 连续天数：如果今天有打卡但还没跨天写入，显示 streak+1
+  const todayHasProgress=Object.values(G.tasks).some(v=>v);
+  const todayStr=new Date().toDateString();
+  const todayInWeekly=G.weekly[todayStr]===true||G.weekly[todayStr]==='partial';
+  let displayStreak=G.streak;
+  if(todayHasProgress&&!todayInWeekly){
+    displayStreak=G.streak+1;
+  }
+  document.getElementById('streakCount').textContent=displayStreak;
+  
   const badges=document.getElementById('titleBadges');let bh='';
   if(G.ach.jumpHero)bh+='<span class="badge hero">🦸‍♀️ 跳绳小英雄</span>';
   if(G.ach.waterSpirit)bh+='<span class="badge water">🧜‍♀️ 水中精灵</span>';
   if(G.ach.storyDirector)bh+='<span class="badge dir">🎬 故事导演</span>';
   badges.innerHTML=bh;
-  if(G.totalDays>=7){document.getElementById('crownIcon').style.display='';document.getElementById('playerTitle').textContent='传奇故事收集家'}
-  else if(G.totalDays>=3)document.getElementById('playerTitle').textContent='资深冒险者';
-  else if(G.streak>=1)document.getElementById('playerTitle').textContent='初级冒险者';
+  
+  let displayTotalDays=G.totalDays;
+  if(todayHasProgress&&!todayInWeekly)displayTotalDays++;
+  
+  if(displayTotalDays>=7){document.getElementById('crownIcon').style.display='';document.getElementById('playerTitle').textContent='传奇故事收集家'}
+  else if(displayTotalDays>=3)document.getElementById('playerTitle').textContent='资深冒险者';
+  else if(displayStreak>=1)document.getElementById('playerTitle').textContent='初级冒险者';
 }
 
 // ===== 初始化 =====
