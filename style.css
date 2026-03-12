@@ -411,23 +411,33 @@ body{
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
   background-clip:text;
 }
-.modal-body{font-size:16px;color:var(--t2);line-height:1.8;text-align:center}
+.modal-body{font-size:18px;color:var(--t2);line-height:1.8;text-align:center}
 .story-text{
   background:rgba(168,85,247,0.06);
-  border-radius:16px;padding:18px;margin:14px 0;
-  text-align:left;line-height:2;font-size:16px;color:var(--t1);
+  border-radius:16px;padding:20px;margin:14px 0;
+  text-align:left;line-height:2.2;font-size:20px;color:var(--t1);
   border-left:4px solid;
   border-image:linear-gradient(180deg,#FF6FB7,#A855F7,#4A7CF7) 1;
 }
-.story-choices{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.story-choices{display:flex;flex-direction:column;gap:10px;margin-top:16px}
 .s-choice{
-  padding:12px 16px;
+  padding:14px 18px;
   border:2px solid var(--border);border-radius:14px;
   background:rgba(255,255,255,0.5);
-  color:var(--t1);font-family:inherit;font-size:15px;
+  color:var(--t1);font-family:inherit;font-size:17px;
   cursor:pointer;text-align:left;transition:.3s;
 }
 .s-choice:hover{border-color:#A855F7;background:linear-gradient(135deg,rgba(255,111,183,0.1),rgba(168,85,247,0.1))}
+.story-back-btn{
+  display:block;width:100%;margin-top:20px;padding:14px;
+  border:none;border-radius:16px;
+  background:linear-gradient(135deg,#A855F7,#7C3AED);
+  color:white;font-size:17px;font-family:inherit;font-weight:600;
+  cursor:pointer;transition:.3s;
+  box-shadow:0 4px 15px rgba(168,85,247,0.3);
+}
+.story-back-btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(168,85,247,0.4)}
+.story-back-btn:active{transform:translateY(0)}
 
 /* ============ 收集的故事 ============ */
 .collected-item{

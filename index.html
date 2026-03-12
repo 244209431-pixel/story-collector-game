@@ -5,6 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>✨ 故事收集家 - 打卡冒险游戏 ✨</title>
 <link rel="stylesheet" href="style.css">
+<script>
+// 【优化】在页面渲染前立即检查登录状态，避免已登录用户看到登录页闪烁
+(function(){
+  var loginVer=localStorage.getItem('storyGame_loginVer');
+  var savedUser=localStorage.getItem('storyGame_currentUser');
+  if(loginVer && loginVer>='v2' && savedUser==='棠棠'){
+    // 已登录用户：通过 CSS 立即隐藏登录页、显示游戏容器
+    var s=document.createElement('style');
+    s.id='quick-login-style';
+    s.textContent='#loginOverlay{display:none!important}#appContainer{display:block!important}.bottom-nav{display:flex!important}';
+    document.head.appendChild(s);
+  }
+})();
+</script>
 </head>
 <body>
 <div class="stars-container" id="starsContainer"></div>
@@ -43,6 +57,7 @@
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
           <div class="streak-badge">🔥 <span id="streakCount">0</span>天连续</div>
           <div style="display:flex;align-items:center;gap:6px">
+            <span id="syncInfo" style="font-size:11px;color:var(--t3)">☁️ 等待同步</span>
             <span class="sync-dot" id="syncDot" title="云端同步状态">☁️</span>
             <button class="logout-btn" onclick="doLogout()" title="切换账号">🔄</button>
           </div>
@@ -105,6 +120,15 @@
         <div id="myStories"></div>
       </div>
       <div class="card"><h3>📚 已收集的故事</h3><div id="collectedStories"></div></div>
+      <div class="card" style="text-align:center">
+        <h3>☁️ 云端同步</h3>
+        <p style="color:var(--t3);font-size:13px;margin:8px 0">数据实时同步到云端，换设备登录也能恢复数据</p>
+        <div id="syncStatusPanel" style="padding:12px;margin:12px 0;border-radius:12px;background:rgba(168,85,247,0.05);border:1px solid rgba(168,85,247,0.1)">
+          <div style="font-size:14px;color:var(--t2)" id="syncDetailStatus">检查中...</div>
+        </div>
+        <button id="btnManualSync" onclick="manualSync()" style="width:100%;padding:14px;border:none;border-radius:14px;background:linear-gradient(135deg,#4A7CF7,#A855F7);color:white;font-size:16px;font-weight:600;font-family:inherit;cursor:pointer;box-shadow:0 4px 15px rgba(74,124,247,0.3);transition:.3s">☁️ 手动同步</button>
+        <p style="color:var(--t3);font-size:11px;margin-top:8px">💡 提示：数据每 30 秒自动同步一次，也可以手动点击同步</p>
+      </div>
     </div>
   </div>
 </div> <!-- /app-container -->

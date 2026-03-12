@@ -1,6 +1,6 @@
 // ==========================================
-// 🎮 故事收集家 - 游戏核心引擎（云同步版）
-// v6.0 — 彻底修复数据丢失：硬编码 blobId + 三重数据源恢复
+// 🎮 故事收集家 - 游戏核心引擎（智能多设备同步版）
+// v8.0 — 基于时间戳的智能合并：以最新操作的设备数据为准，确保多端一致
 // ==========================================
 
 // ===== 云同步配置 =====
@@ -113,10 +113,10 @@ function save(){
   }
 
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v6'};
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v8'};
   localStorage.setItem(key,JSON.stringify(data));
   console.log('[save] 已保存, history keys=',Object.keys(G.history).length,', weekly keys=',Object.keys(G.weekly).length);
-  // 异步同步到云端
+  // 异步同步到云端（每次保存都同步）
   cloudSave(data);
 }
 
@@ -313,11 +313,26 @@ function repairData(){
 }
 
 // ===== 超时 fetch =====
-function fetchWithTimeout(url, options={}, timeout=5000){
+function fetchWithTimeout(url, options={}, timeout=15000){
   return Promise.race([
     fetch(url, options),
     new Promise((_,reject)=>setTimeout(()=>reject(new Error('请求超时')),timeout))
   ]);
+}
+// 带自动重试的 fetch（默认重试 2 次，共 3 次尝试）
+async function fetchWithRetry(url, options={}, timeout=15000, maxRetries=2){
+  let lastError;
+  for(let i=0;i<=maxRetries;i++){
+    try{
+      const resp=await fetchWithTimeout(url, options, timeout);
+      return resp;
+    }catch(e){
+      lastError=e;
+      console.log(`[fetchRetry] 第${i+1}次失败:`,e.message,i<maxRetries?'，即将重试...':'，已用尽重试次数');
+      if(i<maxRetries) await new Promise(r=>setTimeout(r,1000*(i+1))); // 递增等待
+    }
+  }
+  throw lastError;
 }
 
 // ===== 云端存储 =====
@@ -343,20 +358,20 @@ async function cloudSave(data){
     updateSyncUI('syncing');
     const blobId=getBlobId(currentUser);
     if(blobId){
-      // 有 blobId（固定的或 localStorage 中的），直接更新
-      await fetchWithTimeout(JSONBLOB_API+'/'+blobId,{
+      // 有 blobId，直接更新（带重试）
+      await fetchWithRetry(JSONBLOB_API+'/'+blobId,{
         method:'PUT',
         headers:{'Content-Type':'application/json','Accept':'application/json'},
         body:JSON.stringify(data)
-      },8000);
+      },15000,2);
       console.log('[cloudSave] PUT 更新成功, blobId=',blobId);
     }else{
-      // 没有 blobId 的用户，创建新 blob（一般不会走到这里，因为棠棠有固定 blobId）
-      const resp=await fetchWithTimeout(JSONBLOB_API,{
+      // 没有 blobId，创建新 blob（带重试）
+      const resp=await fetchWithRetry(JSONBLOB_API,{
         method:'POST',
         headers:{'Content-Type':'application/json','Accept':'application/json'},
         body:JSON.stringify(data)
-      },8000);
+      },15000,2);
       if(resp.ok){
         const loc=resp.headers.get('Location')||resp.headers.get('location');
         if(loc){
@@ -367,13 +382,15 @@ async function cloudSave(data){
       }
     }
     updateSyncUI('done');
+    return true;
   }catch(e){
     console.log('[cloudSave] 云端同步失败，使用本地存储',e.message);
     updateSyncUI('offline');
+    return false;
   }
 }
 
-// ===== 云端加载（v6.0：增强恢复能力 + 防空覆盖保护） =====
+// ===== 云端加载（v8.0：智能合并 + 以最新数据为准的多设备同步） =====
 async function cloudLoad(){
   try{
     updateSyncUI('syncing');
@@ -388,15 +405,17 @@ async function cloudLoad(){
     
     console.log('[cloudLoad] 开始加载, blobId=',blobId,', isFirstLoad=',isFirstLoad);
     
-    const resp=await fetchWithTimeout(JSONBLOB_API+'/'+blobId,{
+    // 使用带重试的 fetch（最多 3 次尝试，每次 20 秒超时）
+    const resp=await fetchWithRetry(JSONBLOB_API+'/'+blobId,{
       headers:{'Accept':'application/json'}
-    },10000); // 超时放宽到10秒
+    },20000,2);
     
     if(resp.ok){
       const data=await resp.json();
       console.log('[cloudLoad] 云端数据:', JSON.stringify({
         _user:data._user,
         _version:data._version,
+        _lastSync:data._lastSync,
         date:data.date,
         historyKeys:data.history?Object.keys(data.history):[],
         weeklyKeys:data.weekly?Object.keys(data.weekly):[],
@@ -407,10 +426,26 @@ async function cloudLoad(){
       if(data&&data._user===currentUser){
         let changed=false;
         
-        // 【v6.0 关键修复】首次加载（本地无数据）→ 完整恢复模式
-        if(isFirstLoad){
-          console.log('[cloudLoad] 首次加载，执行完整恢复...');
-          // 完整恢复所有字段
+        // 获取本地和云端的最后同步时间
+        const localKey=SYNC_STORAGE_PREFIX+currentUser;
+        const localRaw=localStorage.getItem(localKey);
+        let localLastSync=0;
+        if(localRaw){
+          try{ const ld=JSON.parse(localRaw); localLastSync=ld._lastSync||0; }catch(e){}
+        }
+        const cloudLastSync=data._lastSync||0;
+        
+        console.log('[cloudLoad] 时间戳对比: 本地=',localLastSync,new Date(localLastSync).toLocaleString(),', 云端=',cloudLastSync,new Date(cloudLastSync).toLocaleString());
+        
+        // 【v8.0 核心】判断云端数据是否比本地更新
+        const cloudIsNewer=cloudLastSync>localLastSync;
+        
+        // 【v8.0 关键修复】首次加载（本地无数据）或云端比本地新 → 以云端为准恢复
+        if(isFirstLoad || (cloudIsNewer && localLastSync>0)){
+          const mode=isFirstLoad?'首次加载':'云端更新(以云端/手机数据为准)';
+          console.log('[cloudLoad]',mode,'，执行完整恢复...');
+          
+          // 完整恢复所有字段（以云端为准）
           if(data.date) G.date=data.date;
           if(typeof data.jumpCount==='number') G.jumpCount=data.jumpCount;
           if(typeof data.swimDone==='boolean') G.swimDone=data.swimDone;
@@ -441,30 +476,61 @@ async function cloudLoad(){
           isFirstLoad=false;
           console.log('[cloudLoad] 完整恢复完成, history keys=',Object.keys(G.history),', weekly keys=',Object.keys(G.weekly));
         } else {
-          // 常规模式：智能合并（只补充本地缺失的）
+          // 本地更新或时间相同：智能合并（双向取最优值）
+          console.log('[cloudLoad] 本地数据较新或相同，执行智能合并...');
+          
+          // 合并 history（逐天比较，取更完整的记录）
           if(data.history){
             Object.keys(data.history).forEach(dateStr=>{
-              if(!G.history[dateStr]){
-                G.history[dateStr]=data.history[dateStr];
+              const cloudRec=data.history[dateStr];
+              const localRec=G.history[dateStr];
+              if(!localRec){
+                // 本地没有这天的记录 → 直接用云端的
+                G.history[dateStr]=cloudRec;
                 changed=true;
-                console.log('[cloudLoad] 合并历史记录:',dateStr);
+                console.log('[cloudLoad] 合并缺失历史:',dateStr);
+              } else if(cloudRec && cloudRec.tasks && localRec.tasks){
+                // 两边都有记录 → 取更完整的（完成项更多的一方）
+                const cloudDone=Object.values(cloudRec.tasks).filter(v=>v).length;
+                const localDone=Object.values(localRec.tasks).filter(v=>v).length;
+                if(cloudDone>localDone){
+                  G.history[dateStr]=cloudRec;
+                  changed=true;
+                  console.log('[cloudLoad] 云端记录更完整，覆盖:',dateStr,'(云端完成'+cloudDone+'项 > 本地'+localDone+'项)');
+                }
               }
             });
           }
+          // 合并 weekly（取更好的值：true > partial > false）
           if(data.weekly){
             Object.keys(data.weekly).forEach(dateStr=>{
               const cloudVal=data.weekly[dateStr];
               const localVal=G.weekly[dateStr];
-              if(localVal===undefined||localVal===false){
-                if(cloudVal===true||cloudVal==='partial'){
-                  G.weekly[dateStr]=cloudVal;
-                  changed=true;
-                }
-              }else if(localVal==='partial'&&cloudVal===true){
-                G.weekly[dateStr]=true;
+              // 值优先级：true > 'partial' > false > undefined
+              const valRank=v=>v===true?3:v==='partial'?2:v===false?1:0;
+              if(valRank(cloudVal)>valRank(localVal)){
+                G.weekly[dateStr]=cloudVal;
                 changed=true;
               }
             });
+          }
+          // 合并今日当天数据：如果云端今天的打卡数据更完整，也要覆盖
+          const today=new Date().toDateString();
+          if(data.date===today && G.date===today){
+            // 比较今日任务完成数
+            if(data.tasks && G.tasks){
+              const cloudTaskDone=Object.values(data.tasks).filter(v=>v).length;
+              const localTaskDone=Object.values(G.tasks).filter(v=>v).length;
+              if(cloudTaskDone>localTaskDone){
+                G.tasks={...G.tasks,...data.tasks};
+                if(typeof data.jumpCount==='number' && data.jumpCount>G.jumpCount) G.jumpCount=data.jumpCount;
+                if(data.swimDone && !G.swimDone) G.swimDone=true;
+                if(data.habits) G.habits={...G.habits,...data.habits};
+                if(Array.isArray(data.gems) && data.gems.length>G.gems.length) G.gems=[...data.gems];
+                changed=true;
+                console.log('[cloudLoad] 云端今日数据更完整，合并今日任务 (云端'+cloudTaskDone+'项 > 本地'+localTaskDone+'项)');
+              }
+            }
           }
           // 合并 collected 和 myStories（去重）
           if(Array.isArray(data.collected)){
@@ -485,7 +551,7 @@ async function cloudLoad(){
               }
             });
           }
-          // 成就只向上合并
+          // 成就只向上合并（解锁了就不再锁回去）
           if(data.ach){
             Object.keys(data.ach).forEach(k=>{
               if(data.ach[k]&&!G.ach[k]){
@@ -522,9 +588,9 @@ async function cloudLoad(){
     // 如果是首次加载但云端也失败了，保存空状态（但不覆盖云端）
     if(isFirstLoad){
       isFirstLoad=false;
-      // 【v6.0】只保存到本地，不触发 cloudSave，避免空数据覆盖云端
+      // 只保存到本地，不触发 cloudSave，避免空数据覆盖云端
       const key=SYNC_STORAGE_PREFIX+currentUser;
-      const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v6'};
+      const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v8'};
       localStorage.setItem(key,JSON.stringify(data));
       console.log('[cloudLoad] 首次加载云端失败，仅保存到本地（不覆盖云端）');
     }
@@ -535,16 +601,63 @@ async function cloudLoad(){
 function updateSyncUI(status){
   const dot=document.getElementById('syncDot');
   const loginSync=document.getElementById('syncStatus');
+  const syncInfo=document.getElementById('syncInfo');
   if(status==='syncing'){
     if(dot)dot.textContent='🔄';
     if(loginSync)loginSync.textContent='🔄 正在同步...';
+    if(syncInfo)syncInfo.textContent='☁️ 正在同步...';
   }else if(status==='done'){
     if(dot)dot.textContent='☁️';
+    const timeStr=new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
     if(loginSync)loginSync.textContent='✅ 云端已同步';
+    if(syncInfo)syncInfo.textContent='☁️ 已同步 ('+timeStr+')';
   }else{
     if(dot)dot.textContent='📴';
     if(loginSync)loginSync.textContent='📴 离线模式（数据存在本地）';
+    if(syncInfo)syncInfo.textContent='📴 离线模式';
   }
+}
+
+// ===== 手动同步（v8.0：先拉后推，避免覆盖其他设备的新数据） =====
+async function manualSync(){
+  if(!currentUser){showToast('请先登录');return;}
+  const btn=document.getElementById('btnManualSync');
+  if(btn){btn.disabled=true;btn.textContent='⏳ 同步中...';}
+  
+  try{
+    // 【v8.0 关键修复】先从云端拉取最新数据并合并（这样不会覆盖手机的新数据）
+    console.log('[manualSync] 第一步：从云端拉取最新数据...');
+    await cloudLoad();
+    
+    // 合并完成后再上传合并后的数据到云端
+    console.log('[manualSync] 第二步：上传合并后的数据到云端...');
+    const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v8'};
+    const saveOk=await cloudSave(data);
+    
+    if(saveOk){
+      showToast('☁️ 云端同步成功！');
+    }else{
+      showToast('⚠️ 同步失败，请检查网络后重试');
+    }
+  }catch(e){
+    console.log('[manualSync] 手动同步失败:',e.message);
+    showToast('⚠️ 同步失败: '+e.message);
+  }
+  
+  if(btn){btn.disabled=false;btn.textContent='☁️ 手动同步';}
+}
+
+// 轻量级提示
+function showToast(msg){
+  let t=document.getElementById('syncToast');
+  if(!t){
+    t=document.createElement('div');
+    t.id='syncToast';
+    t.style.cssText='position:fixed;top:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:white;padding:12px 24px;border-radius:20px;font-size:14px;z-index:9999;transition:opacity 0.3s;pointer-events:none;backdrop-filter:blur(10px);';
+    document.body.appendChild(t);
+  }
+  t.textContent=msg;t.style.opacity=1;
+  setTimeout(()=>{t.style.opacity=0},3000);
 }
 
 // ===== 登录 =====
@@ -573,7 +686,7 @@ async function doLogin(){
   
   const btn=document.getElementById('loginBtn');
   btn.disabled=true;
-  btn.textContent='⏳ 正在进入冒险世界...';
+  btn.textContent='⏳ 正在连接云端...';
   
   currentUser=ACCOUNT_NAME;
   selectedAvatar=ACCOUNT_AVATAR;
@@ -584,12 +697,18 @@ async function doLogin(){
   // 加载本地数据
   load();
   
-  // 【关键修复】等待云端数据恢复完成后再渲染界面
+  // 【v7.0】等待云端数据恢复（带进度提示）
+  btn.textContent='⏳ 正在从云端恢复数据...';
   try{
     await cloudLoad();
+    btn.textContent='✅ 数据已同步！';
   }catch(e){
     console.log('[doLogin] 云端加载失败，使用本地数据',e);
+    btn.textContent='⚠️ 使用本地数据进入...';
   }
+  
+  // 短暂显示结果后进入游戏
+  await new Promise(r=>setTimeout(r,500));
   
   // 显示游戏界面
   document.getElementById('loginOverlay').style.display='none';
@@ -607,8 +726,12 @@ async function doLogin(){
   btn.textContent='🚀 开始冒险！';
   
   if(syncTimer)clearInterval(syncTimer);
-  syncTimer=setInterval(()=>{
-    if(currentUser)cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v6'});
+  syncTimer=setInterval(async ()=>{
+    if(!currentUser)return;
+    try{
+      await cloudLoad();
+      await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v8'});
+    }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
   },30000);
 }
 
@@ -1024,7 +1147,13 @@ function renderStoryProg(){
   bar.innerHTML='';
   for(let i=0;i<total;i++){const d=document.createElement('div');d.className='sp-slot'+(i<done?' on':'');bar.appendChild(d)}
   const btn=document.getElementById('btnUnlock'),tt=document.getElementById('storyTitle'),pv=document.getElementById('storyPreview');
-  if(done>=total){btn.disabled=false;btn.textContent='✨ 解锁今日故事！';tt.textContent='🌟 故事已就绪！';pv.textContent='所有宝石已集齐，点击解锁故事！'}
+  const alreadyUnlocked=hasTodayStory();
+  if(alreadyUnlocked){
+    btn.disabled=false;btn.textContent='📖 重新阅读今日故事';
+    tt.textContent='✅ 今日故事已解锁！';
+    const todayStory=getTodayStory();
+    pv.textContent=todayStory?todayStory.title:'今天的故事已经收集好啦~';
+  }else if(done>=total){btn.disabled=false;btn.textContent='✨ 解锁今日故事！';tt.textContent='🌟 故事已就绪！';pv.textContent='所有宝石已集齐，点击解锁故事！'}
   else{btn.disabled=true;btn.textContent=`🔮 还需 ${total-done} 块宝石`;tt.textContent='等待宝石解锁...';pv.textContent=`已收集 ${done}/${total} 块宝石`}
 }
 
@@ -1109,7 +1238,23 @@ function launchFirework(x,y){
 }
 
 // ===== 故事解锁 =====
+// 检查今天是否已解锁过故事
+function hasTodayStory(){
+  const todayStr=new Date().toLocaleDateString('zh-CN');
+  return G.collected.some(s=>s.date===todayStr);
+}
+// 获取今天已解锁的故事
+function getTodayStory(){
+  const todayStr=new Date().toLocaleDateString('zh-CN');
+  return G.collected.find(s=>s.date===todayStr);
+}
 function unlockStory(){
+  // 如果今天已经解锁过故事，直接显示已解锁的故事
+  if(hasTodayStory()){
+    const existStory=getTodayStory();
+    if(existStory) showStoryModal(existStory);
+    return;
+  }
   const dw=new Date().getDay(),isJ=JUMP.includes(dw);
   const pool=isJ?STORIES.jump:STORIES.swim;
   const story=pool[~~(Math.random()*pool.length)];
@@ -1121,17 +1266,23 @@ function showStoryModal(s){
   document.getElementById('mStoryTitle').textContent=s.title;
   let b=`<div class="story-text">${s.text.replace(/\n/g,'<br>')}</div>`;
   if(s.choices&&s.choices.length){
-    b+='<p style="margin-top:12px;color:var(--gold);font-size:13px">选择你想要的结局：</p><div class="story-choices">';
+    b+='<p style="margin-top:14px;color:var(--gold);font-size:15px">选择你想要的结局：</p><div class="story-choices">';
     s.choices.forEach(c=>{b+=`<button class="s-choice" onclick="selectEnd('${c.ending}')">${c.text}</button>`});
     b+='</div>';
   }
+  b+='<button class="story-back-btn" onclick="closeModal(\'storyModal\')">⬅️ 返回</button>';
   document.getElementById('mStoryBody').innerHTML=b;
   document.getElementById('storyModal').classList.add('show');
 }
 function selectEnd(e){
-  document.getElementById('mStoryBody').innerHTML+=`<div style="margin-top:16px;padding:14px;background:rgba(255,215,0,.1);border-radius:12px;border:1px solid rgba(255,215,0,.3)">
-    <p style="color:var(--gold);font-size:14px">🎬 你选择了「${e}」</p><p style="color:var(--t2);font-size:12px;margin-top:6px">已保存到成长宝箱！</p></div>`;
+  // 移除选择按钮
   document.querySelectorAll('.s-choice').forEach(b=>b.style.display='none');
+  // 在返回按钮前插入结局内容
+  const backBtn=document.querySelector('.story-back-btn');
+  const endDiv=document.createElement('div');
+  endDiv.style.cssText='margin-top:16px;padding:14px;background:rgba(255,215,0,.1);border-radius:12px;border:1px solid rgba(255,215,0,.3)';
+  endDiv.innerHTML=`<p style="color:var(--gold);font-size:16px">🎬 你选择了「${e}」</p><p style="color:var(--t2);font-size:14px;margin-top:6px">已保存到成长宝箱！</p>`;
+  backBtn.parentNode.insertBefore(endDiv,backBtn);
 }
 function closeModal(id){document.getElementById(id).classList.remove('show')}
 
@@ -1315,17 +1466,12 @@ function initGame(){
   }
   const savedUser=localStorage.getItem('storyGame_currentUser');
   if(savedUser===ACCOUNT_NAME){
+    // 已登录用户 —— 自动进入游戏（页面已通过内联脚本隐藏了登录页）
     currentUser=ACCOUNT_NAME;
     selectedAvatar=ACCOUNT_AVATAR;
     
+    // 先加载本地数据并立即渲染界面（用户秒进游戏）
     load();
-    
-    // 【关键修复】等待云端数据恢复完成后再渲染
-    try{
-      await cloudLoad();
-    }catch(e){
-      console.log('[startup] 云端加载失败',e);
-    }
     
     document.getElementById('loginOverlay').style.display='none';
     document.getElementById('appContainer').style.display='';
@@ -1336,13 +1482,33 @@ function initGame(){
     if(crown)document.querySelector('.avatar').innerHTML=ACCOUNT_AVATAR+'<span class="crown" id="crownIcon" '+(G.totalDays>=7?'':'style="display:none"')+'>👑</span>';
     document.getElementById('playerName').textContent=ACCOUNT_NAME;
     
+    // 先用本地数据初始化游戏，让用户立即可以操作
     initGame();
     
+    // 然后在后台静默同步云端数据（不阻塞界面）
+    cloudLoad().then(()=>{
+      // 云端数据加载完后重新渲染一次以确保数据最新
+      initGame();
+      console.log('[startup] 云端数据同步完成');
+    }).catch(e=>{
+      console.log('[startup] 云端加载失败，使用本地数据',e);
+    });
+    
+    // 移除内联快速登录样式（正常 JS 已接管控制）
+    const quickStyle=document.getElementById('quick-login-style');
+    if(quickStyle)quickStyle.remove();
+    
     if(syncTimer)clearInterval(syncTimer);
-    syncTimer=setInterval(()=>{
-      if(currentUser)cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v6'});
+    syncTimer=setInterval(async ()=>{
+      if(!currentUser)return;
+      // 【v8.0】先拉取云端最新数据合并，再上传（避免覆盖其他设备的新数据）
+      try{
+        await cloudLoad();
+        await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v8'});
+      }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
     },30000);
   }else{
+    // 未登录 —— 显示登录页面
     document.getElementById('loginOverlay').style.display='';
     document.getElementById('appContainer').style.display='none';
     document.querySelector('.bottom-nav').style.display='none';
