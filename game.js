@@ -57,11 +57,25 @@ let G={
   gems:[],streak:0,weekly:{},
   collected:[],myStories:[],
   ach:{jumpHero:false,waterSpirit:false,storyDirector:false,goodHabit:false},
-  consJump:0,weekSwim:0,totalDays:0,dirUnlocked:false
+  consJump:0,weekSwim:0,totalDays:0,dirUnlocked:false,
+  // 每日详细记录（用于查看历史）
+  history:{}
 };
 
 function save(){
   if(!currentUser)return;
+  // 保存当天的实时快照到 history（方便随时查看）
+  if(!G.history) G.history={};
+  const dw=new Date().getDay();
+  G.history[G.date]={
+    tasks:{...G.tasks},
+    habits:{...G.habits},
+    jumpCount:G.jumpCount,
+    swimDone:G.swimDone,
+    gems:[...G.gems],
+    sportType:JUMP.includes(dw)?'jump':'swim',
+    allDone:Object.values(G.tasks).every(v=>v)
+  };
   const key=SYNC_STORAGE_PREFIX+currentUser;
   const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now()};
   localStorage.setItem(key,JSON.stringify(data));
@@ -76,15 +90,57 @@ function load(){
   if(s){
     try{const d=JSON.parse(s);G={...G,...d};}catch(e){}
   }
+  // 兼容旧版本：如果没有 history 字段则创建
+  if(!G.history) G.history={};
+  
   const today=new Date().toDateString();
   if(G.date!==today){
-    const allDone=Object.values(G.tasks).every(v=>v);
-    if(allDone){G.streak++;G.totalDays++;G.weekly[G.date]=true}
-    else{G.streak=0;G.weekly[G.date]=false}
-    G.jumpCount=0;G.swimDone=false;
+    // ====== 跨天处理 ======
+    const prevDate=G.date; // 昨天（或上次打开的日期）
+    
+    // 1. 保存昨天的详细打卡记录到 history
+    const sportDone=G.tasks.sport;
+    const dw=new Date(prevDate).getDay();
+    const wasJumpDay=JUMP.includes(dw);
+    G.history[prevDate]={
+      tasks:{...G.tasks},
+      habits:{...G.habits},
+      jumpCount:G.jumpCount,
+      swimDone:G.swimDone,
+      gems:[...G.gems],
+      sportType:wasJumpDay?'jump':'swim',
+      allDone:Object.values(G.tasks).every(v=>v)
+    };
+    
+    // 2. 计算连续天数和总天数
+    // 只要运动打卡了（核心任务）就算有效天
+    const yesterdayAllDone=Object.values(G.tasks).every(v=>v);
+    if(yesterdayAllDone){
+      G.streak++;
+      G.totalDays++;
+      G.weekly[prevDate]=true;
+    }else if(sportDone){
+      // 运动完成了但其他没全完成，保持连续但不加总天数里的"全完成"标记
+      G.streak++;
+      G.totalDays++;
+      G.weekly[prevDate]='partial'; // 部分完成
+    }else{
+      G.streak=0;
+      G.weekly[prevDate]=false;
+    }
+    
+    // 3. 重置今日数据
+    G.jumpCount=0;
+    G.swimDone=false;
     G.tasks={sport:false,homework:false,study:false,outdoor:false};
     G.habits={fast:false,tidy:false,polite:false};
-    G.gems=[];G.date=today;save();
+    G.gems=[];
+    G.date=today;
+    
+    // 4. 重置每日型成就（goodHabit 每天需要重新达成）
+    G.ach.goodHabit=false;
+    
+    save();
   }
 }
 
@@ -259,7 +315,8 @@ function doLogout(){
       gems:[],streak:0,weekly:{},
       collected:[],myStories:[],
       ach:{jumpHero:false,waterSpirit:false,storyDirector:false,goodHabit:false},
-      consJump:0,weekSwim:0,totalDays:0,dirUnlocked:false
+      consJump:0,weekSwim:0,totalDays:0,dirUnlocked:false,
+      history:{}
     };
     // 显示登录页
     document.getElementById('loginOverlay').style.display='';
@@ -310,14 +367,144 @@ function renderDateNav(){
   const today=new Date(),dow=today.getDay();
   for(let i=0;i<7;i++){
     const d=new Date(today);d.setDate(today.getDate()-dow+i);
-    const isToday=d.toDateString()===today.toDateString();
+    const ds=d.toDateString();
+    const isToday=ds===today.toDateString();
+    const isFuture=d>today&&!isToday;
     const dw=d.getDay(),isJ=JUMP.includes(dw),isS=SWIM.includes(dw);
-    const done=G.weekly[d.toDateString()]===true;
+    const status=G.weekly[ds]; // true=全完成, 'partial'=部分完成, false=未完成, undefined=未到
+    const hist=G.history&&G.history[ds];
     const div=document.createElement('div');
-    div.className='day-item'+(isToday?' active':'')+(isJ?' jd':'')+(isS?' sd':'')+(done?' done':'');
-    div.innerHTML=`<div class="dn">周${W[dw]}</div><div class="dd">${d.getDate()}</div>`;
+    let cls='day-item';
+    if(isToday)cls+=' active';
+    if(isJ)cls+=' jd';
+    if(isS)cls+=' sd';
+    if(status===true)cls+=' done';
+    else if(status==='partial')cls+=' partial';
+    if(isFuture)cls+=' future';
+    div.className=cls;
+    
+    // 状态图标
+    let statusIcon='';
+    if(isToday){
+      statusIcon='';
+    }else if(status===true){
+      statusIcon='<div class="day-status">✅</div>';
+    }else if(status==='partial'){
+      statusIcon='<div class="day-status">🔶</div>';
+    }else if(status===false){
+      statusIcon='<div class="day-status">❌</div>';
+    }
+    
+    div.innerHTML=`<div class="dn">周${W[dw]}</div><div class="dd">${d.getDate()}</div>${statusIcon}`;
+    
+    // 点击查看历史（非未来日期）
+    if(!isFuture){
+      div.style.cursor='pointer';
+      div.onclick=(function(dateStr,isT){
+        return function(){
+          if(isT){
+            // 点击今天：关闭历史面板
+            closeHistoryPanel();
+          }else{
+            showHistoryDetail(dateStr);
+          }
+        };
+      })(ds,isToday);
+    }
     nav.appendChild(div);
   }
+}
+
+// ===== 历史打卡详情面板 =====
+function showHistoryDetail(dateStr){
+  const hist=G.history&&G.history[dateStr];
+  const d=new Date(dateStr);
+  const dw=d.getDay();
+  const dateLabel=`${d.getMonth()+1}月${d.getDate()}日 周${W[dw]}`;
+  
+  // 如果面板不存在则创建
+  let panel=document.getElementById('historyPanel');
+  if(!panel){
+    panel=document.createElement('div');
+    panel.id='historyPanel';
+    panel.className='card history-panel';
+    // 插入到日期导航后面
+    const dateNav=document.getElementById('dateNav');
+    dateNav.parentNode.insertBefore(panel,dateNav.nextSibling);
+  }
+  panel.style.display='block';
+  
+  if(!hist){
+    panel.innerHTML=`<div class="history-header">
+      <h3>📅 ${dateLabel}</h3>
+      <button class="history-close" onclick="closeHistoryPanel()">✕</button>
+    </div>
+    <div class="history-empty">
+      <span style="font-size:36px">📭</span>
+      <p>这一天没有打卡记录</p>
+    </div>`;
+    return;
+  }
+  
+  const isJ=hist.sportType==='jump';
+  const allDone=hist.allDone;
+  
+  let tasksHtml='';
+  const taskLabels=[
+    {k:'sport',e:isJ?'🏃‍♀️':'🏊‍♀️',t:isJ?`跳绳 ${hist.jumpCount}/1000`:(hist.swimDone?'游泳课 ✅':'游泳课 ❌')},
+    {k:'homework',e:'📝',t:'完成学校作业'},
+    {k:'study',e:'📖',t:'新概念学习'},
+    {k:'outdoor',e:'⭐',t:'行为习惯达标'}
+  ];
+  taskLabels.forEach(tl=>{
+    const done=hist.tasks[tl.k];
+    tasksHtml+=`<div class="history-task ${done?'done':''}">
+      <span class="history-task-icon">${done?'✅':'⬜'}</span>
+      <span class="history-task-emoji">${tl.e}</span>
+      <span class="history-task-text">${tl.t}</span>
+    </div>`;
+  });
+  
+  let habitsHtml='';
+  if(hist.habits){
+    const habitLabels=[
+      {k:'fast',e:'⚡',t:'做事快速不拖拉'},
+      {k:'tidy',e:'🧹',t:'自己的事情自己做'},
+      {k:'polite',e:'💝',t:'有礼貌、好态度'}
+    ];
+    habitLabels.forEach(hl=>{
+      const done=hist.habits[hl.k];
+      habitsHtml+=`<div class="history-task ${done?'done':''}">
+        <span class="history-task-icon">${done?'⭐':'☆'}</span>
+        <span class="history-task-emoji">${hl.e}</span>
+        <span class="history-task-text">${hl.t}</span>
+      </div>`;
+    });
+  }
+  
+  const gemsCount=hist.gems?hist.gems.length:0;
+  
+  panel.innerHTML=`<div class="history-header">
+    <h3>📅 ${dateLabel}</h3>
+    <button class="history-close" onclick="closeHistoryPanel()">✕</button>
+  </div>
+  <div class="history-summary ${allDone?'all-done':''}">
+    ${allDone?'🌟 全部完成！太棒了！':'🔸 部分完成'}
+    <span class="history-gems">💎 ×${gemsCount}</span>
+  </div>
+  <div class="history-section">
+    <h4>📋 任务完成情况</h4>
+    ${tasksHtml}
+  </div>
+  ${habitsHtml?`<div class="history-section">
+    <h4>⭐ 行为习惯</h4>
+    ${habitsHtml}
+  </div>`:''}`;
+}
+
+function closeHistoryPanel(){
+  const panel=document.getElementById('historyPanel');
+  if(panel)panel.style.display='none';
 }
 
 // ===== 运动卡片 =====
