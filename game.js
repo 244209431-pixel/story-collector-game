@@ -67,15 +67,20 @@ function save(){
   // 保存当天的实时快照到 history（方便随时查看）
   if(!G.history) G.history={};
   const dw=new Date().getDay();
-  G.history[G.date]={
-    tasks:{...G.tasks},
-    habits:{...G.habits},
-    jumpCount:G.jumpCount,
-    swimDone:G.swimDone,
-    gems:[...G.gems],
-    sportType:JUMP.includes(dw)?'jump':'swim',
-    allDone:Object.values(G.tasks).every(v=>v)
-  };
+  const anyTaskDone=Object.values(G.tasks).some(v=>v);
+  const anyHabitDone=Object.values(G.habits).some(v=>v);
+  // 只在今天有实际打卡数据时才写入 history，避免空数据覆盖
+  if(anyTaskDone||anyHabitDone||G.jumpCount>0||G.swimDone){
+    G.history[G.date]={
+      tasks:{...G.tasks},
+      habits:{...G.habits},
+      jumpCount:G.jumpCount,
+      swimDone:G.swimDone,
+      gems:[...G.gems],
+      sportType:JUMP.includes(dw)?'jump':'swim',
+      allDone:Object.values(G.tasks).every(v=>v)
+    };
+  }
   const key=SYNC_STORAGE_PREFIX+currentUser;
   const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now()};
   localStorage.setItem(key,JSON.stringify(data));
@@ -93,44 +98,41 @@ function load(){
   // 兼容旧版本：如果没有 history 字段则创建
   if(!G.history) G.history={};
   
-  // ====== 数据修复：从 weekly/history 重新计算 totalDays 和 streak ======
-  repairData();
-  
   const today=new Date().toDateString();
   if(G.date!==today){
     // ====== 跨天处理 ======
     const prevDate=G.date; // 昨天（或上次打开的日期）
     
-    // 1. 保存昨天的详细打卡记录到 history
+    // 1. 保存上次打开那天的详细打卡记录到 history 和 weekly
     const sportDone=G.tasks.sport;
     const dw=new Date(prevDate).getDay();
     const wasJumpDay=JUMP.includes(dw);
+    const prevTasks={...G.tasks};
+    const prevHabits={...G.habits};
+    
+    // 先保存到 history（保留详细记录）
     G.history[prevDate]={
-      tasks:{...G.tasks},
-      habits:{...G.habits},
+      tasks:prevTasks,
+      habits:prevHabits,
       jumpCount:G.jumpCount,
       swimDone:G.swimDone,
       gems:[...G.gems],
       sportType:wasJumpDay?'jump':'swim',
-      allDone:Object.values(G.tasks).every(v=>v)
+      allDone:Object.values(prevTasks).every(v=>v)
     };
     
-    // 2. 计算连续天数和总天数
-    // 只要有任何一个任务完成了就算有效天（更宽容的判定）
-    const anyTaskDone=Object.values(G.tasks).some(v=>v);
-    const yesterdayAllDone=Object.values(G.tasks).every(v=>v);
-    if(yesterdayAllDone){
-      G.streak++;
-      G.totalDays++;
-      G.weekly[prevDate]=true;
-    }else if(anyTaskDone){
-      // 有任何任务完成了，保持连续天数
-      G.streak++;
-      G.totalDays++;
-      G.weekly[prevDate]='partial'; // 部分完成
-    }else{
-      G.streak=0;
-      G.weekly[prevDate]=false;
+    // 2. 写入 weekly 记录（如果还没有的话）
+    const anyTaskDone=Object.values(prevTasks).some(v=>v);
+    const allTaskDone=Object.values(prevTasks).every(v=>v);
+    if(!G.weekly[prevDate]){
+      // 之前没记录过这天
+      if(allTaskDone){
+        G.weekly[prevDate]=true;
+      }else if(anyTaskDone){
+        G.weekly[prevDate]='partial';
+      }else{
+        G.weekly[prevDate]=false;
+      }
     }
     
     // 3. 重置今日数据
@@ -144,7 +146,13 @@ function load(){
     // 4. 重置每日型成就（goodHabit 每天需要重新达成）
     G.ach.goodHabit=false;
     
+    // 5. 跨天后再执行数据修复（从 weekly/history 重算 totalDays 和 streak）
+    repairData();
+    
     save();
+  } else {
+    // 同一天内打开，也做一次数据修复
+    repairData();
   }
 }
 
@@ -152,7 +160,24 @@ function load(){
 // 从 weekly 和 history 中重新计算 totalDays 和 streak
 // 解决旧版BUG导致数据被错误清零的问题
 function repairData(){
-  // 1. 重新计算 totalDays：统计 weekly 中所有有效打卡日
+  // ---- 第一步：确保 history 中的有效记录都同步到 weekly ----
+  if(G.history){
+    const histKeys=Object.keys(G.history);
+    histKeys.forEach(dateStr=>{
+      const h=G.history[dateStr];
+      if(h&&h.tasks){
+        const anyDone=Object.values(h.tasks).some(v=>v);
+        if(anyDone && !G.weekly[dateStr]){
+          // history 有打卡记录但 weekly 中没有，补上
+          const allDone=Object.values(h.tasks).every(v=>v);
+          G.weekly[dateStr]=allDone?true:'partial';
+          console.log('[数据修复] 从 history 恢复 weekly 记录:',dateStr);
+        }
+      }
+    });
+  }
+  
+  // ---- 第二步：统计 totalDays（所有有效打卡天数） ----
   const weeklyKeys=Object.keys(G.weekly);
   let realTotalDays=0;
   weeklyKeys.forEach(dateStr=>{
@@ -162,39 +187,21 @@ function repairData(){
     }
   });
   
-  // 也从 history 中找额外的有效天（防止 weekly 丢失但 history 还在）
-  if(G.history){
-    const histKeys=Object.keys(G.history);
-    histKeys.forEach(dateStr=>{
-      const h=G.history[dateStr];
-      if(h&&h.tasks){
-        const anyDone=Object.values(h.tasks).some(v=>v);
-        if(anyDone && !G.weekly[dateStr]){
-          // history 有记录但 weekly 中没有，补上
-          const allDone=Object.values(h.tasks).every(v=>v);
-          G.weekly[dateStr]=allDone?true:'partial';
-          realTotalDays++;
-        }
-      }
-    });
-  }
-  
-  // 如果计算出来的 totalDays 比存的大，说明被旧BUG清零了，修复它
+  // 如果计算出来的比存的大，修复它
   if(realTotalDays>G.totalDays){
     console.log('[数据修复] totalDays 从',G.totalDays,'修复为',realTotalDays);
     G.totalDays=realTotalDays;
   }
   
-  // 2. 重新计算 streak：从今天往回数，连续有记录的天数
+  // ---- 第三步：重新计算 streak（连续打卡天数） ----
+  // 从昨天往回数（今天还没跨天写入 weekly，所以不算）
   const today=new Date();
-  let checkDate=new Date(today);
-  // 如果今天有打卡记录（当天任务有完成的），从今天开始算
-  // 否则从昨天开始算
   const todayStr=today.toDateString();
-  const todayHasRecord=G.weekly[todayStr]===true||G.weekly[todayStr]==='partial'||
-    (G.tasks&&Object.values(G.tasks).some(v=>v));
   
-  if(!todayHasRecord){
+  // 确定起始日期：如果今天在 weekly 中有记录，从今天开始；否则从昨天开始
+  let checkDate=new Date(today);
+  const todayInWeekly=G.weekly[todayStr]===true||G.weekly[todayStr]==='partial';
+  if(!todayInWeekly){
     checkDate.setDate(checkDate.getDate()-1);
   }
   
@@ -207,19 +214,6 @@ function repairData(){
       checkDate.setDate(checkDate.getDate()-1);
     }else{
       break;
-    }
-  }
-  
-  // 如果今天有在打卡（tasks有完成的），也算连续中的一天
-  if(todayHasRecord && G.date===todayStr && !G.weekly[todayStr]){
-    // 今天还没跨天写入 weekly，但确实有任务完成了
-    // 检查昨天是否也有记录
-    const yesterday=new Date(today);
-    yesterday.setDate(yesterday.getDate()-1);
-    const yVal=G.weekly[yesterday.toDateString()];
-    if(yVal===true||yVal==='partial'||realStreak>0){
-      // 昨天有记录，今天也在打卡中，连续天数 = 历史streak + 1
-      realStreak=Math.max(realStreak, realStreak>0?realStreak:1);
     }
   }
   
