@@ -1,6 +1,6 @@
 // ==========================================
 // 🎮 故事收集家 - 游戏核心引擎（智能多设备同步版）
-// v8.1 — 修复：weekSwim/consJump 从 history 重算 + 故事不重复 + 成就自动检查
+// v8.3 — 日历无限历史+月历快速跳转 + 跳绳改为一周3天 + weekSwim 修复 + 故事不重复
 // ==========================================
 
 // ===== 云同步配置 =====
@@ -53,7 +53,7 @@ const STORIES={
      choices:[{text:"🌺 她找到了永不凋谢的海底花园",ending:"花园结局"},{text:"🐋 她骑上大鲸鱼环游了整个海洋",ending:"环游结局"}]}
   ],
   hero:{title:"🦸‍♀️ 跳绳小英雄 · 专属篇章",
-    text:"🎉 恭喜！连续3天坚持跳绳打卡，解锁隐藏章节！\n\n在跳绳王国里，有一个古老的传说——当勇士连续三天跳绳，跳绳之神就会出现。\n\n今天，当你跳完最后一个的时候，一道金色光芒笼罩了你。跳绳变成了闪耀的丝带，脚下出现了云朵。\n\n\"你就是跳绳小英雄！你的跳绳将拥有彩虹的力量！\"\n\n你高高地跳起来，在空中画出了完美的彩虹。所有朋友都在为你欢呼！"},
+    text:"🎉 恭喜！本周跳绳打卡满3天，解锁隐藏章节！\n\n在跳绳王国里，有一个古老的传说——当勇士一周内跳绳满三天，跳绳之神就会出现。\n\n今天，当你跳完最后一个的时候，一道金色光芒笼罩了你。跳绳变成了闪耀的丝带，脚下出现了云朵。\n\n\"你就是跳绳小英雄！你的跳绳将拥有彩虹的力量！\"\n\n你高高地跳起来，在空中画出了完美的彩虹。所有朋友都在为你欢呼！"},
   spirit:{title:"🧜‍♀️ 水中精灵 · 觉醒篇",
     text:"🌊 太棒了！本周游泳课满两次，获得'水中精灵'称号！\n\n当你第二次从泳池出来时，水滴没有掉落——它们在你周围轻轻飘浮。\n\n\"是时候了，\"水之女神说，\"你就是水中精灵！\"\n\n你的故事里多了一个新角色——水之精灵。它会在你困难时化作泉水给你力量，开心时变成喷泉为你庆祝！\n\n✨ 水中精灵已加入你的故事伙伴团！"}
 };
@@ -311,30 +311,47 @@ function repairData(){
     G.streak=realStreak;
   }
   
-  // 【v8.1 修复】第四步：从 history 重新统计本周 weekSwim（游泳次数）
+  // 【v8.2 修复】第四步：从 history 重新统计本周 weekSwim（游泳次数）和 weekJump（跳绳天数）
   const todayDate=new Date();
   const todayDow=todayDate.getDay(); // 0=日 6=六
-  let realWeekSwim=0;
+  
+  // 计算本周的起始日（周日）和结束日（周六）的 toDateString
+  const weekDates=[];
   for(let i=0;i<7;i++){
     const d=new Date(todayDate);
     d.setDate(todayDate.getDate()-todayDow+i);
-    const ds=d.toDateString();
-    const h=G.history[ds];
-    if(h && h.sportType==='swim' && h.swimDone){
+    weekDates.push(d.toDateString());
+  }
+  
+  let realWeekSwim=0;
+  let realWeekJump=0; // 【v8.2 新增】本周跳绳天数（替代 consJump）
+  
+  // 遍历 history 的所有 key，精确匹配本周日期
+  Object.keys(G.history).forEach(dateStr=>{
+    if(weekDates.includes(dateStr)){
+      const h=G.history[dateStr];
+      if(h){
+        if(h.sportType==='swim' && h.swimDone){
+          realWeekSwim++;
+        }
+        if(h.sportType==='jump' && h.jumpCount>=1000){
+          realWeekJump++;
+        }
+      }
+    }
+  });
+  
+  // 也算上今天（如果今天已完成运动，但 history 里还没有今天的记录）
+  const todayDs=todayDate.toDateString();
+  const todayHistRec=G.history[todayDs];
+  if(G.swimDone && SWIM.includes(todayDow)){
+    if(!todayHistRec || !todayHistRec.swimDone){
       realWeekSwim++;
     }
   }
-  // 也算上今天（如果今天是游泳日且已完成，但还没写入 history）
-  if(G.swimDone && SWIM.includes(todayDow)){
-    const todayInHistory=G.history[todayStr];
-    if(!todayInHistory || !todayInHistory.swimDone){
-      // 今天已完成游泳但 history 还没记录（今天还没 save 到 history）
-      // 检查 realWeekSwim 是否已经包含了今天
-      const todayDs=todayDate.toDateString();
-      const todayH=G.history[todayDs];
-      if(!todayH || !todayH.swimDone){
-        realWeekSwim++;
-      }
+  if(G.tasks.sport && JUMP.includes(todayDow) && G.jumpCount>=1000){
+    if(!todayHistRec || todayHistRec.sportType!=='jump' || todayHistRec.jumpCount<1000){
+      realWeekJump++;
     }
   }
   
@@ -343,35 +360,10 @@ function repairData(){
     G.weekSwim=realWeekSwim;
   }
   
-  // 【v8.1 修复】第五步：从 history 重新统计 consJump（连续跳绳天数）
-  // 从今天往回数，连续有跳绳完成（jumpCount>=1000）的天数
-  let realConsJump=0;
-  let checkJumpDate=new Date(todayDate);
-  // 先检查今天
-  if(G.tasks.sport && JUMP.includes(todayDow) && G.jumpCount>=1000){
-    realConsJump++;
-    checkJumpDate.setDate(checkJumpDate.getDate()-1);
-  } else {
-    // 今天还没完成跳绳，从昨天开始数
-    checkJumpDate.setDate(checkJumpDate.getDate()-1);
-  }
-  for(let i=0;i<365;i++){
-    const ds=checkJumpDate.toDateString();
-    const h=G.history[ds];
-    if(h && h.sportType==='jump' && h.jumpCount>=1000){
-      realConsJump++;
-      checkJumpDate.setDate(checkJumpDate.getDate()-1);
-    } else if(h && h.sportType==='swim'){
-      // 游泳日不算中断跳绳连续（因为那天本来就不跳绳）
-      checkJumpDate.setDate(checkJumpDate.getDate()-1);
-    } else {
-      break;
-    }
-  }
-  
-  if(realConsJump!==G.consJump){
-    console.log('[修复] consJump:',G.consJump,'→',realConsJump);
-    G.consJump=realConsJump;
+  // 【v8.2 修复】weekJump 替代 consJump
+  if(realWeekJump!==G.consJump){
+    console.log('[修复] weekJump(consJump):',G.consJump,'→',realWeekJump);
+    G.consJump=realWeekJump;
   }
   
   // 第六步：根据修复后的数据检查成就
@@ -858,17 +850,92 @@ function switchPage(p,el){
   if(el)el.classList.add('active');
 }
 
-// ===== 日期导航 =====
+// ===== 日期导航（无限历史 + 月历快速跳转） =====
+let weekOffset=0; // 0=本周，-1=上周，-2=上上周...
+let touchStartX=0;
+let touchStartY=0;
+let calendarPickerOpen=false;
+
+// 获取最早有数据的日期
+function getEarliestDate(){
+  const allDates=Object.keys(G.history).concat(Object.keys(G.weekly));
+  if(allDates.length===0) return new Date();
+  let earliest=new Date();
+  allDates.forEach(ds=>{
+    const d=new Date(ds);
+    if(!isNaN(d.getTime()) && d<earliest) earliest=d;
+  });
+  return earliest;
+}
+
+// 计算某个日期距离本周的周偏移量
+function dateToWeekOffset(targetDate){
+  const today=new Date();
+  const todayDow=today.getDay();
+  const thisWeekStart=new Date(today);
+  thisWeekStart.setDate(today.getDate()-todayDow);
+  thisWeekStart.setHours(0,0,0,0);
+  
+  const targetDow=targetDate.getDay();
+  const targetWeekStart=new Date(targetDate);
+  targetWeekStart.setDate(targetDate.getDate()-targetDow);
+  targetWeekStart.setHours(0,0,0,0);
+  
+  const diffDays=Math.round((targetWeekStart-thisWeekStart)/(1000*60*60*24));
+  return Math.round(diffDays/7);
+}
+
 function renderDateNav(){
   const nav=document.getElementById('dateNav');nav.innerHTML='';
-  const today=new Date(),dow=today.getDay();
+  const today=new Date(),todayDow=today.getDay();
+  
+  // 计算目标周的周日（起始日）
+  const weekStartDate=new Date(today);
+  weekStartDate.setDate(today.getDate()-todayDow+weekOffset*7);
+  
+  const isCurrentWeek=(weekOffset===0);
+  
+  // 计算最早可回溯的周偏移
+  const earliest=getEarliestDate();
+  const minOffset=dateToWeekOffset(earliest);
+  const canGoBack=(weekOffset>minOffset-1); // 允许多看一周
+  
+  // 顶部控制栏：< 周标题（可点击打开月历） >
+  const ctrl=document.createElement('div');
+  ctrl.className='week-ctrl';
+  const weekEndDate=new Date(weekStartDate);
+  weekEndDate.setDate(weekStartDate.getDate()+6);
+  const weekLabel=`${weekStartDate.getFullYear()}年${weekStartDate.getMonth()+1}月${weekStartDate.getDate()}日 - ${weekEndDate.getMonth()+1}月${weekEndDate.getDate()}日`;
+  
+  ctrl.innerHTML=`
+    <button class="week-arrow ${!canGoBack?'disabled':''}" onclick="changeWeek(-1)" ${!canGoBack?'disabled':''}>◀</button>
+    <span class="week-label" onclick="toggleCalendarPicker()" style="cursor:pointer">${isCurrentWeek?'📅 本周':weekLabel} ▾</span>
+    <button class="week-arrow ${isCurrentWeek?'disabled':''}" onclick="changeWeek(1)" ${isCurrentWeek?'disabled':''}>▶</button>
+  `;
+  nav.appendChild(ctrl);
+  
+  // 如果不是本周，显示"回到本周"按钮
+  if(!isCurrentWeek){
+    const backBtn=document.createElement('div');
+    backBtn.className='back-to-today';
+    backBtn.innerHTML='<button onclick="goToCurrentWeek()">📍 回到本周</button>';
+    nav.appendChild(backBtn);
+  }
+  
+  // 日期格子容器
+  const daysRow=document.createElement('div');
+  daysRow.className='days-row';
+  
   for(let i=0;i<7;i++){
-    const d=new Date(today);d.setDate(today.getDate()-dow+i);
+    const d=new Date(weekStartDate);
+    d.setDate(weekStartDate.getDate()+i);
     const ds=d.toDateString();
     const isToday=ds===today.toDateString();
     const isFuture=d>today&&!isToday;
     const dw=d.getDay(),isJ=JUMP.includes(dw),isS=SWIM.includes(dw);
     const status=G.weekly[ds];
+    // 也检查 history 中是否有数据（有些旧数据可能只在 history 里）
+    const hasHistory=G.history&&G.history[ds];
     const div=document.createElement('div');
     let cls='day-item';
     if(isToday)cls+=' active';
@@ -876,6 +943,7 @@ function renderDateNav(){
     if(isS)cls+=' sd';
     if(status===true)cls+=' done';
     else if(status==='partial')cls+=' partial';
+    else if(hasHistory)cls+=' has-data'; // 有历史数据但没有 weekly 标记
     if(isFuture)cls+=' future';
     div.className=cls;
     
@@ -888,6 +956,8 @@ function renderDateNav(){
       statusIcon='<div class="day-status">🔶</div>';
     }else if(status===false){
       statusIcon='<div class="day-status">❌</div>';
+    }else if(hasHistory){
+      statusIcon='<div class="day-status">📋</div>';
     }
     
     div.innerHTML=`<div class="dn">周${W[dw]}</div><div class="dd">${d.getDate()}</div>${statusIcon}`;
@@ -896,13 +966,180 @@ function renderDateNav(){
       div.style.cursor='pointer';
       div.onclick=(function(dateStr,isT){
         return function(){
-          if(isT) closeHistoryPanel();
+          if(isT && isCurrentWeek) closeHistoryPanel();
           else showHistoryDetail(dateStr);
         };
       })(ds,isToday);
     }
-    nav.appendChild(div);
+    daysRow.appendChild(div);
   }
+  nav.appendChild(daysRow);
+  
+  // 月历选择器（如果打开了的话）
+  if(calendarPickerOpen){
+    nav.appendChild(buildCalendarPicker(weekStartDate));
+  }
+  
+  // 添加触摸滑动事件
+  nav.ontouchstart=function(e){
+    touchStartX=e.touches[0].clientX;
+    touchStartY=e.touches[0].clientY;
+  };
+  nav.ontouchend=function(e){
+    const dx=e.changedTouches[0].clientX-touchStartX;
+    const dy=e.changedTouches[0].clientY-touchStartY;
+    if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){
+      if(dx>0) changeWeek(-1);
+      else changeWeek(1);
+    }
+  };
+}
+
+function changeWeek(delta){
+  const newOffset=weekOffset+delta;
+  if(newOffset>0) return; // 不能超过本周
+  weekOffset=newOffset;
+  renderDateNav();
+  closeHistoryPanel();
+}
+
+function goToCurrentWeek(){
+  weekOffset=0;
+  calendarPickerOpen=false;
+  renderDateNav();
+  closeHistoryPanel();
+}
+
+function toggleCalendarPicker(){
+  calendarPickerOpen=!calendarPickerOpen;
+  renderDateNav();
+}
+
+// 构建月历选择器面板
+function buildCalendarPicker(currentViewDate){
+  const panel=document.createElement('div');
+  panel.className='calendar-picker';
+  
+  // 当前查看的月份
+  const viewYear=currentViewDate.getFullYear();
+  const viewMonth=currentViewDate.getMonth();
+  
+  // 头部：< 年月 >
+  const header=document.createElement('div');
+  header.className='cal-header';
+  header.innerHTML=`
+    <button class="cal-nav" onclick="calPickerNav(-1)">◀</button>
+    <span class="cal-title">${viewYear}年${viewMonth+1}月</span>
+    <button class="cal-nav" onclick="calPickerNav(1)">▶</button>
+  `;
+  panel.appendChild(header);
+  
+  // 星期标题行
+  const weekRow=document.createElement('div');
+  weekRow.className='cal-week-row';
+  ['日','一','二','三','四','五','六'].forEach(w=>{
+    const span=document.createElement('span');
+    span.className='cal-week-day';
+    span.textContent=w;
+    weekRow.appendChild(span);
+  });
+  panel.appendChild(weekRow);
+  
+  // 日期网格
+  const grid=document.createElement('div');
+  grid.className='cal-grid';
+  
+  const firstDay=new Date(viewYear,viewMonth,1);
+  const startPad=firstDay.getDay(); // 第一天是周几
+  const daysInMonth=new Date(viewYear,viewMonth+1,0).getDate();
+  const today=new Date();
+  
+  // 补空白
+  for(let i=0;i<startPad;i++){
+    const empty=document.createElement('div');
+    empty.className='cal-day empty';
+    grid.appendChild(empty);
+  }
+  
+  // 日期格子
+  for(let d=1;d<=daysInMonth;d++){
+    const dateObj=new Date(viewYear,viewMonth,d);
+    const ds=dateObj.toDateString();
+    const cell=document.createElement('div');
+    let cls='cal-day';
+    
+    const isFuture=dateObj>today;
+    const isToday=ds===today.toDateString();
+    const hasWeekly=G.weekly[ds];
+    const hasHist=G.history&&G.history[ds];
+    
+    if(isToday) cls+=' today';
+    if(isFuture) cls+=' future';
+    if(hasWeekly===true) cls+=' done';
+    else if(hasWeekly==='partial') cls+=' partial';
+    else if(hasHist) cls+=' has-data';
+    
+    cell.className=cls;
+    cell.textContent=d;
+    
+    if(!isFuture){
+      cell.onclick=(function(dt){
+        return function(){
+          // 点击某天 → 跳到那一周
+          weekOffset=dateToWeekOffset(dt);
+          calendarPickerOpen=false;
+          renderDateNav();
+          showHistoryDetail(dt.toDateString());
+        };
+      })(dateObj);
+    }
+    grid.appendChild(cell);
+  }
+  panel.appendChild(grid);
+  
+  // 底部统计
+  const stats=document.createElement('div');
+  stats.className='cal-stats';
+  let monthDone=0,monthPartial=0,monthTotal=0;
+  for(let d=1;d<=daysInMonth;d++){
+    const dateObj=new Date(viewYear,viewMonth,d);
+    if(dateObj>today) break;
+    const ds=dateObj.toDateString();
+    monthTotal++;
+    if(G.weekly[ds]===true) monthDone++;
+    else if(G.weekly[ds]==='partial') monthPartial++;
+  }
+  stats.innerHTML=`<span>本月打卡：✅${monthDone}天 🔶${monthPartial}天 / 共${monthTotal}天</span>`;
+  panel.appendChild(stats);
+  
+  // 存储当前月历查看的月份（用于导航）
+  panel.dataset.year=viewYear;
+  panel.dataset.month=viewMonth;
+  
+  return panel;
+}
+
+// 月历面板内的月份切换
+function calPickerNav(delta){
+  const panel=document.querySelector('.calendar-picker');
+  if(!panel) return;
+  let y=parseInt(panel.dataset.year);
+  let m=parseInt(panel.dataset.month)+delta;
+  if(m<0){m=11;y--;}
+  if(m>11){m=0;y++;}
+  
+  // 不能超过当前月
+  const today=new Date();
+  if(y>today.getFullYear()||(y===today.getFullYear()&&m>today.getMonth())) return;
+  
+  // 构建新的月份的临时日期来触发重新渲染
+  const tempDate=new Date(y,m,15);
+  // 更新 weekOffset 到该月中旬所在的周
+  weekOffset=dateToWeekOffset(tempDate);
+  renderDateNav();
+  // 保持月历打开
+  calendarPickerOpen=true;
+  renderDateNav();
 }
 
 // ===== 历史打卡详情面板 =====
@@ -1391,7 +1628,7 @@ function showAchModal(title,s){
 function renderAch(){
   const l=document.getElementById('achievementsList');
   const achs=[
-    {k:'jumpHero',i:'🦸‍♀️',t:'跳绳小英雄',d:'连续3天完成跳绳',p:`${Math.min(3,G.consJump)}/3天`},
+    {k:'jumpHero',i:'🦸‍♀️',t:'跳绳小英雄',d:'本周完成3天跳绳',p:`${Math.min(3,G.consJump)}/3天`},
     {k:'waterSpirit',i:'🧜‍♀️',t:'水中精灵',d:'本周完成两次游泳课',p:`${Math.min(2,G.weekSwim)}/2次`},
     {k:'goodHabit',i:'🌟',t:'好习惯之星',d:'行为习惯全部达标',p:Object.values(G.habits).filter(v=>v).length+'/3项'},
     {k:'storyDirector',i:'🎬',t:'故事导演权',d:'集满7天宝箱碎片',p:`${Math.min(7,G.totalDays)}/7天`}
