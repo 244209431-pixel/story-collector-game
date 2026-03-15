@@ -1,6 +1,6 @@
 // ==========================================
 // 🎮 故事收集家 - 游戏核心引擎（智能多设备同步版）
-// v8.3 — 日历无限历史+月历快速跳转 + 跳绳改为一周3天 + weekSwim 修复 + 故事不重复
+// v8.4 — 一周从周一到周日 + 日历无限历史+月历快速跳转 + 跳绳改为一周3天 + weekSwim 修复 + 故事不重复
 // ==========================================
 
 // ===== 云同步配置 =====
@@ -22,6 +22,9 @@ const FIXED_BLOB_IDS={
 
 const W=['日','一','二','三','四','五','六'];
 const JUMP=[1,2,4,6,0], SWIM=[3,5];
+
+// 【v8.4】周一起始：将 JS 的 getDay()（0=日）转换为周一起始的偏移（0=一,1=二...6=日）
+function mondayDow(d){ const dow=(typeof d==='number')?d:d.getDay(); return (dow+6)%7; }
 
 const STORIES={
   jump:[
@@ -315,11 +318,12 @@ function repairData(){
   const todayDate=new Date();
   const todayDow=todayDate.getDay(); // 0=日 6=六
   
-  // 计算本周的起始日（周日）和结束日（周六）的 toDateString
+  // 【v8.4】计算本周的起始日（周一）和结束日（周日）的 toDateString
+  const mDow=mondayDow(todayDow); // 周一起始偏移
   const weekDates=[];
   for(let i=0;i<7;i++){
     const d=new Date(todayDate);
-    d.setDate(todayDate.getDate()-todayDow+i);
+    d.setDate(todayDate.getDate()-mDow+i);
     weekDates.push(d.toDateString());
   }
   
@@ -868,17 +872,17 @@ function getEarliestDate(){
   return earliest;
 }
 
-// 计算某个日期距离本周的周偏移量
+// 计算某个日期距离本周的周偏移量（【v8.4】以周一为起始）
 function dateToWeekOffset(targetDate){
   const today=new Date();
-  const todayDow=today.getDay();
+  const todayMDow=mondayDow(today);
   const thisWeekStart=new Date(today);
-  thisWeekStart.setDate(today.getDate()-todayDow);
+  thisWeekStart.setDate(today.getDate()-todayMDow);
   thisWeekStart.setHours(0,0,0,0);
   
-  const targetDow=targetDate.getDay();
+  const targetMDow=mondayDow(targetDate);
   const targetWeekStart=new Date(targetDate);
-  targetWeekStart.setDate(targetDate.getDate()-targetDow);
+  targetWeekStart.setDate(targetDate.getDate()-targetMDow);
   targetWeekStart.setHours(0,0,0,0);
   
   const diffDays=Math.round((targetWeekStart-thisWeekStart)/(1000*60*60*24));
@@ -887,11 +891,11 @@ function dateToWeekOffset(targetDate){
 
 function renderDateNav(){
   const nav=document.getElementById('dateNav');nav.innerHTML='';
-  const today=new Date(),todayDow=today.getDay();
+  const today=new Date(),todayMDow=mondayDow(today);
   
-  // 计算目标周的周日（起始日）
+  // 【v8.4】计算目标周的周一（起始日）
   const weekStartDate=new Date(today);
-  weekStartDate.setDate(today.getDate()-todayDow+weekOffset*7);
+  weekStartDate.setDate(today.getDate()-todayMDow+weekOffset*7);
   
   const isCurrentWeek=(weekOffset===0);
   
@@ -1034,10 +1038,10 @@ function buildCalendarPicker(currentViewDate){
   `;
   panel.appendChild(header);
   
-  // 星期标题行
+  // 星期标题行（【v8.4】周一到周日）
   const weekRow=document.createElement('div');
   weekRow.className='cal-week-row';
-  ['日','一','二','三','四','五','六'].forEach(w=>{
+  ['一','二','三','四','五','六','日'].forEach(w=>{
     const span=document.createElement('span');
     span.className='cal-week-day';
     span.textContent=w;
@@ -1050,7 +1054,7 @@ function buildCalendarPicker(currentViewDate){
   grid.className='cal-grid';
   
   const firstDay=new Date(viewYear,viewMonth,1);
-  const startPad=firstDay.getDay(); // 第一天是周几
+  const startPad=mondayDow(firstDay); // 【v8.4】以周一为起始计算补位
   const daysInMonth=new Date(viewYear,viewMonth+1,0).getDate();
   const today=new Date();
   

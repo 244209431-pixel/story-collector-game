@@ -1001,6 +1001,9 @@ const FIXED_BLOB_IDS={
 const W=['日','一','二','三','四','五','六'];
 const JUMP=[1,2,4,6,0], SWIM=[3,5];
 
+// 【v8.4】周一起始：将 JS 的 getDay()（0=日）转换为周一起始的偏移（0=一,1=二...6=日）
+function mondayDow(d){ const dow=(typeof d==='number')?d:d.getDay(); return (dow+6)%7; }
+
 const STORIES={
   jump:[
     {title:"🌈 彩虹跳绳手",preview:"传说在云端之上，有一位用跳绳编织彩虹的少女...",
@@ -1288,10 +1291,12 @@ function repairData(){
   const todayDate=new Date();
   const todayDow=todayDate.getDay();
   
+  // 【v8.4】计算本周的起始日（周一）和结束日（周日）
+  const mDow=mondayDow(todayDow);
   const weekDates=[];
   for(let i=0;i<7;i++){
     const d=new Date(todayDate);
-    d.setDate(todayDate.getDate()-todayDow+i);
+    d.setDate(todayDate.getDate()-mDow+i);
     weekDates.push(d.toDateString());
   }
   
@@ -1794,13 +1799,13 @@ function getEarliestDate(){
 
 function dateToWeekOffset(targetDate){
   const today=new Date();
-  const todayDow=today.getDay();
+  const todayMDow=mondayDow(today);
   const thisWeekStart=new Date(today);
-  thisWeekStart.setDate(today.getDate()-todayDow);
+  thisWeekStart.setDate(today.getDate()-todayMDow);
   thisWeekStart.setHours(0,0,0,0);
-  const targetDow=targetDate.getDay();
+  const targetMDow=mondayDow(targetDate);
   const targetWeekStart=new Date(targetDate);
-  targetWeekStart.setDate(targetDate.getDate()-targetDow);
+  targetWeekStart.setDate(targetDate.getDate()-targetMDow);
   targetWeekStart.setHours(0,0,0,0);
   const diffDays=Math.round((targetWeekStart-thisWeekStart)/(1000*60*60*24));
   return Math.round(diffDays/7);
@@ -1808,10 +1813,10 @@ function dateToWeekOffset(targetDate){
 
 function renderDateNav(){
   const nav=document.getElementById('dateNav');nav.innerHTML='';
-  const today=new Date(),todayDow=today.getDay();
+  const today=new Date(),todayMDow=mondayDow(today);
   
   const weekStartDate=new Date(today);
-  weekStartDate.setDate(today.getDate()-todayDow+weekOffset*7);
+  weekStartDate.setDate(today.getDate()-todayMDow+weekOffset*7);
   
   const isCurrentWeek=(weekOffset===0);
   const earliest=getEarliestDate();
@@ -1944,7 +1949,7 @@ function buildCalendarPicker(currentViewDate){
   
   const weekRow=document.createElement('div');
   weekRow.className='cal-week-row';
-  ['日','一','二','三','四','五','六'].forEach(w=>{
+  ['一','二','三','四','五','六','日'].forEach(w=>{
     const span=document.createElement('span');
     span.className='cal-week-day';
     span.textContent=w;
@@ -1955,7 +1960,7 @@ function buildCalendarPicker(currentViewDate){
   const grid=document.createElement('div');
   grid.className='cal-grid';
   const firstDay=new Date(viewYear,viewMonth,1);
-  const startPad=firstDay.getDay();
+  const startPad=mondayDow(firstDay);
   const daysInMonth=new Date(viewYear,viewMonth+1,0).getDate();
   const today=new Date();
   
