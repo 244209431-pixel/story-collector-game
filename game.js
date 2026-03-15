@@ -1,6 +1,6 @@
 // ==========================================
 // 🎮 故事收集家 - 游戏核心引擎（智能多设备同步版）
-// v8.0 — 基于时间戳的智能合并：以最新操作的设备数据为准，确保多端一致
+// v8.1 — 修复：weekSwim/consJump 从 history 重算 + 故事不重复 + 成就自动检查
 // ==========================================
 
 // ===== 云同步配置 =====
@@ -309,6 +309,79 @@ function repairData(){
   if(realStreak!==G.streak){
     console.log('[修复] streak:',G.streak,'→',realStreak);
     G.streak=realStreak;
+  }
+  
+  // 【v8.1 修复】第四步：从 history 重新统计本周 weekSwim（游泳次数）
+  const todayDate=new Date();
+  const todayDow=todayDate.getDay(); // 0=日 6=六
+  let realWeekSwim=0;
+  for(let i=0;i<7;i++){
+    const d=new Date(todayDate);
+    d.setDate(todayDate.getDate()-todayDow+i);
+    const ds=d.toDateString();
+    const h=G.history[ds];
+    if(h && h.sportType==='swim' && h.swimDone){
+      realWeekSwim++;
+    }
+  }
+  // 也算上今天（如果今天是游泳日且已完成，但还没写入 history）
+  if(G.swimDone && SWIM.includes(todayDow)){
+    const todayInHistory=G.history[todayStr];
+    if(!todayInHistory || !todayInHistory.swimDone){
+      // 今天已完成游泳但 history 还没记录（今天还没 save 到 history）
+      // 检查 realWeekSwim 是否已经包含了今天
+      const todayDs=todayDate.toDateString();
+      const todayH=G.history[todayDs];
+      if(!todayH || !todayH.swimDone){
+        realWeekSwim++;
+      }
+    }
+  }
+  
+  if(realWeekSwim!==G.weekSwim){
+    console.log('[修复] weekSwim:',G.weekSwim,'→',realWeekSwim);
+    G.weekSwim=realWeekSwim;
+  }
+  
+  // 【v8.1 修复】第五步：从 history 重新统计 consJump（连续跳绳天数）
+  // 从今天往回数，连续有跳绳完成（jumpCount>=1000）的天数
+  let realConsJump=0;
+  let checkJumpDate=new Date(todayDate);
+  // 先检查今天
+  if(G.tasks.sport && JUMP.includes(todayDow) && G.jumpCount>=1000){
+    realConsJump++;
+    checkJumpDate.setDate(checkJumpDate.getDate()-1);
+  } else {
+    // 今天还没完成跳绳，从昨天开始数
+    checkJumpDate.setDate(checkJumpDate.getDate()-1);
+  }
+  for(let i=0;i<365;i++){
+    const ds=checkJumpDate.toDateString();
+    const h=G.history[ds];
+    if(h && h.sportType==='jump' && h.jumpCount>=1000){
+      realConsJump++;
+      checkJumpDate.setDate(checkJumpDate.getDate()-1);
+    } else if(h && h.sportType==='swim'){
+      // 游泳日不算中断跳绳连续（因为那天本来就不跳绳）
+      checkJumpDate.setDate(checkJumpDate.getDate()-1);
+    } else {
+      break;
+    }
+  }
+  
+  if(realConsJump!==G.consJump){
+    console.log('[修复] consJump:',G.consJump,'→',realConsJump);
+    G.consJump=realConsJump;
+  }
+  
+  // 第六步：根据修复后的数据检查成就
+  if(G.weekSwim>=2 && !G.ach.waterSpirit){
+    G.ach.waterSpirit=true;
+    console.log('[修复] 水中精灵成就已解锁');
+  }
+  if(G.consJump>=3 && !G.ach.jumpHero){
+    G.ach.jumpHero=true;
+    console.log('[修复] 跳绳小英雄成就已解锁');
   }
 }
 
@@ -1257,7 +1330,22 @@ function unlockStory(){
   }
   const dw=new Date().getDay(),isJ=JUMP.includes(dw);
   const pool=isJ?STORIES.jump:STORIES.swim;
-  const story=pool[~~(Math.random()*pool.length)];
+  
+  // 【v8.1 修复】排除已收集过的故事，确保每天不重复
+  const collectedTitles=new Set(G.collected.map(s=>s.title));
+  const available=pool.filter(s=>!collectedTitles.has(s.title));
+  
+  let story;
+  if(available.length>0){
+    // 使用基于日期的确定性选择（同一天多次解锁得到同样的故事）
+    const dateHash=new Date().toDateString().split('').reduce((a,c)=>a+c.charCodeAt(0),0);
+    story=available[dateHash%available.length];
+  }else{
+    // 所有故事都收集过了，用日期轮转再从头开始（仍然保证每天不同）
+    const dateHash=new Date().toDateString().split('').reduce((a,c)=>a+c.charCodeAt(0),0);
+    story=pool[dateHash%pool.length];
+  }
+  
   if(!G.gems.includes('story'))G.gems.push('story');
   G.collected.push({...story,date:new Date().toLocaleDateString('zh-CN'),type:isJ?'jump':'swim'});
   renderGems();renderCollected();save();showStoryModal(story);bigConfetti();
