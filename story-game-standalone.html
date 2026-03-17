@@ -1569,6 +1569,7 @@ async function cloudLoad(){
           }
           if(data.ach){
             Object.keys(data.ach).forEach(k=>{
+              if(k==='jumpHero'||k==='waterSpirit') return;
               if(data.ach[k]&&!G.ach[k]){
                 G.ach[k]=true;
                 changed=true;

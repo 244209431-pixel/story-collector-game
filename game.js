@@ -1,6 +1,6 @@
 // ==========================================
 // 🎮 故事收集家 - 游戏核心引擎（智能多设备同步版）
-// v8.4 — 一周从周一到周日 + 日历无限历史+月历快速跳转 + 跳绳改为一周3天 + weekSwim 修复 + 故事不重复
+// v8.5 — 跨周重置跳绳/游泳成就 + 一周从周一到周日 + 日历无限历史+月历快速跳转
 // ==========================================
 
 // ===== 云同步配置 =====
@@ -233,7 +233,27 @@ function handleDayChange(prevDate, today){
     console.log('[跨天] weekly['+prevDate+']=',G.weekly[prevDate]);
   }
   
-  // 第二步：重置今日数据
+  // 第二步：检测是否跨周（【v8.5】上周成就不带到本周）
+  const prevDateObj=new Date(prevDate);
+  const todayDateObj=new Date(today);
+  const prevWeekStart=new Date(prevDateObj);
+  prevWeekStart.setDate(prevDateObj.getDate()-mondayDow(prevDateObj));
+  prevWeekStart.setHours(0,0,0,0);
+  const todayWeekStart=new Date(todayDateObj);
+  todayWeekStart.setDate(todayDateObj.getDate()-mondayDow(todayDateObj));
+  todayWeekStart.setHours(0,0,0,0);
+  
+  if(prevWeekStart.getTime()!==todayWeekStart.getTime()){
+    // 跨周了！重置本周跳绳/游泳计数和成就
+    console.log('[跨天] 检测到跨周！上周起始:',prevWeekStart.toDateString(),'本周起始:',todayWeekStart.toDateString());
+    G.consJump=0;
+    G.weekSwim=0;
+    G.ach.jumpHero=false;
+    G.ach.waterSpirit=false;
+    console.log('[跨天] 已重置 consJump/weekSwim/jumpHero/waterSpirit');
+  }
+  
+  // 第三步：重置今日数据
   G.jumpCount=0;
   G.swimDone=false;
   G.tasks={sport:false,homework:false,study:false,outdoor:false};
@@ -370,14 +390,20 @@ function repairData(){
     G.consJump=realWeekJump;
   }
   
-  // 第六步：根据修复后的数据检查成就
+  // 第六步：根据本周实际数据更新成就状态（【v8.5】支持跨周重置）
   if(G.weekSwim>=2 && !G.ach.waterSpirit){
     G.ach.waterSpirit=true;
     console.log('[修复] 水中精灵成就已解锁');
+  } else if(G.weekSwim<2 && G.ach.waterSpirit){
+    G.ach.waterSpirit=false;
+    console.log('[修复] 水中精灵成就已重置（本周未达标）');
   }
   if(G.consJump>=3 && !G.ach.jumpHero){
     G.ach.jumpHero=true;
     console.log('[修复] 跳绳小英雄成就已解锁');
+  } else if(G.consJump<3 && G.ach.jumpHero){
+    G.ach.jumpHero=false;
+    console.log('[修复] 跳绳小英雄成就已重置（本周未达标）');
   }
 }
 
@@ -620,9 +646,11 @@ async function cloudLoad(){
               }
             });
           }
-          // 成就只向上合并（解锁了就不再锁回去）
+          // 成就合并（【v8.5】jumpHero/waterSpirit 按本周数据决定，其他只向上合并）
           if(data.ach){
             Object.keys(data.ach).forEach(k=>{
+              // jumpHero 和 waterSpirit 由 repairData 根据本周数据决定，不从云端强制覆盖
+              if(k==='jumpHero'||k==='waterSpirit') return;
               if(data.ach[k]&&!G.ach[k]){
                 G.ach[k]=true;
                 changed=true;
