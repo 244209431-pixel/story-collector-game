@@ -820,3 +820,19 @@ body::before{
   0%,100%{opacity:1;transform:scale(1)}
   50%{opacity:0.7;transform:scale(1.08)}
 }
+
+/* ============ 【v8.7】成就卡片 — 曾经解锁过（新周期进行中） ============ */
+.ach-card.ever-on{
+  border-color:rgba(168,85,247,0.3);
+  background:linear-gradient(135deg,rgba(168,85,247,0.08),rgba(255,111,183,0.08));
+}
+.ach-card.ever-on .ach-icon{
+  background:linear-gradient(135deg,rgba(255,215,0,0.3),rgba(251,146,36,0.3));
+  box-shadow:0 2px 8px rgba(255,215,0,0.15);
+  filter:none;opacity:1;
+}
+.ach-prog.cycle-prog{
+  color:#FB923C;
+  font-size:13px;
+  font-weight:600;
+}

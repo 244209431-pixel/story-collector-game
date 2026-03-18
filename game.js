@@ -1,6 +1,6 @@
 // ==========================================
 // 🎮 故事收集家 - 游戏核心引擎（智能多设备同步版）
-// v8.5 — 跨周重置跳绳/游泳成就 + 一周从周一到周日 + 日历无限历史+月历快速跳转
+// v8.7 — 宝箱新一轮挑战样式 + 导演徽章永久保留 + 旧数据自动补 dirUnlockedDate
 // ==========================================
 
 // ===== 云同步配置 =====
@@ -71,7 +71,9 @@ function makeDefaultState(){
     gems:[],streak:0,weekly:{},
     collected:[],myStories:[],
     ach:{jumpHero:false,waterSpirit:false,storyDirector:false,goodHabit:false},
-    consJump:0,weekSwim:0,totalDays:0,dirUnlocked:false,
+    consJump:0,weekSwim:0,totalDays:0,dirUnlocked:false,dirUnlockedDate:null,
+    dirUnlockedEver:false, // 【v8.7】是否曾经解锁过故事导演权（永久标记，用于徽章永久保留）
+    dirCycleCount:0, // 【v8.7】已完成的挑战轮数
     history:{}
   };
 }
@@ -152,6 +154,9 @@ function load(){
       if(typeof d.weekSwim==='number') G.weekSwim=d.weekSwim;
       if(typeof d.totalDays==='number') G.totalDays=d.totalDays;
       if(typeof d.dirUnlocked==='boolean') G.dirUnlocked=d.dirUnlocked;
+      if(d.dirUnlockedDate) G.dirUnlockedDate=d.dirUnlockedDate;
+      if(typeof d.dirUnlockedEver==='boolean') G.dirUnlockedEver=d.dirUnlockedEver;
+      if(typeof d.dirCycleCount==='number') G.dirCycleCount=d.dirCycleCount;
       if(d.history&&typeof d.history==='object') G.history={...d.history};
       
       console.log('[load] 原始数据加载完成, date=',G.date);
@@ -287,12 +292,50 @@ function repairData(){
     }
   });
   
-  // 第二步：重新统计 totalDays
+  // 【v8.7】修复旧数据：如果 dirUnlocked=true 但 dirUnlockedDate 为空，从历史数据推算
+  if(G.dirUnlocked && !G.dirUnlockedDate){
+    // 从 weekly 找到第7个打卡日（按时间排序），那天就是解锁日期
+    const sortedDates=Object.keys(G.weekly)
+      .filter(ds=>{const v=G.weekly[ds];return v===true||v==='partial';})
+      .sort((a,b)=>new Date(a)-new Date(b));
+    if(sortedDates.length>=7){
+      G.dirUnlockedDate=sortedDates[6]; // 第7天（index=6）
+      console.log('[修复] 旧数据补 dirUnlockedDate:',G.dirUnlockedDate,'(从历史第7个打卡日推算)');
+    }else{
+      // 打卡不足7天但 dirUnlocked=true（异常），用最后一个打卡日
+      G.dirUnlockedDate=sortedDates.length>0?sortedDates[sortedDates.length-1]:new Date().toDateString();
+      console.log('[修复] 旧数据打卡不足7天但已解锁，用最后打卡日:',G.dirUnlockedDate);
+    }
+  }
+  
+  // 【v8.7】修复 dirUnlockedEver：如果已经解锁过但没有此标记
+  if(G.dirUnlocked && !G.dirUnlockedEver){
+    G.dirUnlockedEver=true;
+    console.log('[修复] 补 dirUnlockedEver=true');
+  }
+  
+  // 第二步：重新统计 totalDays（【v8.7】支持故事导演权解锁后重新计算）
+  // 如果已经解锁过故事导演权，则只计算解锁那天之后的打卡天数
   let realTotalDays=0;
-  Object.keys(G.weekly).forEach(dateStr=>{
-    const val=G.weekly[dateStr];
-    if(val===true||val==='partial') realTotalDays++;
-  });
+  if(G.dirUnlockedDate){
+    // 从解锁日期的下一天开始计算
+    const unlockDate=new Date(G.dirUnlockedDate);
+    unlockDate.setDate(unlockDate.getDate()+1);
+    const unlockNextStr=unlockDate.toDateString();
+    Object.keys(G.weekly).forEach(dateStr=>{
+      const val=G.weekly[dateStr];
+      if(val===true||val==='partial'){
+        const d=new Date(dateStr);
+        if(d>=unlockDate) realTotalDays++;
+      }
+    });
+    console.log('[修复] totalDays(解锁后周期):',G.totalDays,'→',realTotalDays,'(解锁日:',G.dirUnlockedDate,')');
+  }else{
+    Object.keys(G.weekly).forEach(dateStr=>{
+      const val=G.weekly[dateStr];
+      if(val===true||val==='partial') realTotalDays++;
+    });
+  }
   
   if(realTotalDays!==G.totalDays){
     console.log('[修复] totalDays:',G.totalDays,'→',realTotalDays);
@@ -404,6 +447,34 @@ function repairData(){
   } else if(G.consJump<3 && G.ach.jumpHero){
     G.ach.jumpHero=false;
     console.log('[修复] 跳绳小英雄成就已重置（本周未达标）');
+  }
+  
+  // 【v8.6】好习惯之星：根据当天习惯状态更新
+  const allHabitsDone=Object.values(G.habits).every(v=>v);
+  if(allHabitsDone && !G.ach.goodHabit){
+    G.ach.goodHabit=true;
+    console.log('[修复] 好习惯之星成就已解锁（当天习惯全部达标）');
+  } else if(!allHabitsDone && G.ach.goodHabit){
+    G.ach.goodHabit=false;
+    console.log('[修复] 好习惯之星成就已重置（当天习惯未全部达标）');
+  }
+  
+  // 【v8.7】故事导演权：
+  // - dirUnlockedEver 为 true → 徽章永久保留（在 updateStatus 中显示）
+  // - storyDirector 成就跟随新周期：新一轮达到7天才重新解锁
+  if(G.dirUnlockedDate){
+    // 已解锁过，检查新一轮是否再次达到7天
+    if(G.totalDays>=7){
+      if(!G.ach.storyDirector){
+        G.ach.storyDirector=true;
+        console.log('[修复] 故事导演权新周期达成！');
+      }
+    } else {
+      if(G.ach.storyDirector){
+        G.ach.storyDirector=false;
+        console.log('[修复] 故事导演权新周期进行中，成就重置（但徽章保留）');
+      }
+    }
   }
 }
 
@@ -556,6 +627,9 @@ async function cloudLoad(){
           if(typeof data.weekSwim==='number') G.weekSwim=data.weekSwim;
           if(typeof data.totalDays==='number') G.totalDays=data.totalDays;
           if(typeof data.dirUnlocked==='boolean') G.dirUnlocked=data.dirUnlocked;
+          if(data.dirUnlockedDate) G.dirUnlockedDate=data.dirUnlockedDate;
+          if(typeof data.dirUnlockedEver==='boolean') G.dirUnlockedEver=data.dirUnlockedEver;
+          if(typeof data.dirCycleCount==='number') G.dirCycleCount=data.dirCycleCount;
           if(data.history&&typeof data.history==='object') G.history={...data.history};
           
           // 恢复后执行跨天处理
@@ -646,11 +720,11 @@ async function cloudLoad(){
               }
             });
           }
-          // 成就合并（【v8.5】jumpHero/waterSpirit 按本周数据决定，其他只向上合并）
+          // 成就合并（【v8.6】jumpHero/waterSpirit/goodHabit/storyDirector 按实际数据决定，其他只向上合并）
           if(data.ach){
             Object.keys(data.ach).forEach(k=>{
-              // jumpHero 和 waterSpirit 由 repairData 根据本周数据决定，不从云端强制覆盖
-              if(k==='jumpHero'||k==='waterSpirit') return;
+              // 这些成就由 repairData 根据实际数据决定，不从云端强制覆盖
+              if(k==='jumpHero'||k==='waterSpirit'||k==='goodHabit'||k==='storyDirector') return;
               if(data.ach[k]&&!G.ach[k]){
                 G.ach[k]=true;
                 changed=true;
@@ -658,6 +732,9 @@ async function cloudLoad(){
             });
           }
           if(data.dirUnlocked&&!G.dirUnlocked){G.dirUnlocked=true;changed=true;}
+          if(data.dirUnlockedDate&&!G.dirUnlockedDate){G.dirUnlockedDate=data.dirUnlockedDate;changed=true;}
+          if(data.dirUnlockedEver&&!G.dirUnlockedEver){G.dirUnlockedEver=true;changed=true;}
+          if(typeof data.dirCycleCount==='number'&&data.dirCycleCount>G.dirCycleCount){G.dirCycleCount=data.dirCycleCount;changed=true;}
         }
         
         if(changed){
@@ -1659,17 +1736,45 @@ function showAchModal(title,s){
 }
 function renderAch(){
   const l=document.getElementById('achievementsList');
+  // 【v8.7】故事导演权：区分首次 vs 新一轮
+  let dirDesc,dirProg;
+  if(G.dirUnlockedEver||G.dirUnlockedDate){
+    // 已解锁过，显示新一轮挑战进度
+    const cycle=G.dirCycleCount||1;
+    if(G.totalDays>=7){
+      dirDesc=`第${cycle+1}轮挑战完成！`;
+      dirProg='✅ 已达成';
+    }else{
+      dirDesc=`新一轮挑战中 (第${cycle+1}轮)`;
+      dirProg=`${Math.min(7,G.totalDays)}/7天`;
+    }
+  }else{
+    dirDesc='集满7天宝箱碎片';
+    dirProg=`${Math.min(7,G.totalDays)}/7天`;
+  }
   const achs=[
     {k:'jumpHero',i:'🦸‍♀️',t:'跳绳小英雄',d:'本周完成3天跳绳',p:`${Math.min(3,G.consJump)}/3天`},
     {k:'waterSpirit',i:'🧜‍♀️',t:'水中精灵',d:'本周完成两次游泳课',p:`${Math.min(2,G.weekSwim)}/2次`},
-    {k:'goodHabit',i:'🌟',t:'好习惯之星',d:'行为习惯全部达标',p:Object.values(G.habits).filter(v=>v).length+'/3项'},
-    {k:'storyDirector',i:'🎬',t:'故事导演权',d:'集满7天宝箱碎片',p:`${Math.min(7,G.totalDays)}/7天`}
+    {k:'goodHabit',i:'🌟',t:'好习惯之星',d:'今日行为习惯全部达标',p:Object.values(G.habits).filter(v=>v).length+'/3项'},
+    {k:'storyDirector',i:'🎬',t:'故事导演权',d:dirDesc,p:dirProg}
   ];
   l.innerHTML=achs.map(a=>{
     const on=G.ach[a.k];
-    return `<div class="ach-card ${on?'on':'off'}"><div class="ach-icon">${a.i}</div>
+    // 【v8.7】故事导演权特殊：即使新周期未达标，如果曾经解锁过，显示"已解锁(进行中)"样式
+    let progHtml;
+    if(a.k==='storyDirector'&&(G.dirUnlockedEver||G.dirUnlockedDate)&&!on){
+      progHtml=`<div class="ach-prog cycle-prog">🔄 ${a.p}</div>`;
+    }else{
+      progHtml=`<div class="ach-prog">${on?'✅ 已解锁':a.p}</div>`;
+    }
+    // 曾经解锁过的导演权用 ever-on 样式（不是灰色的）
+    let cardClass='ach-card';
+    if(on) cardClass+=' on';
+    else if(a.k==='storyDirector'&&(G.dirUnlockedEver||G.dirUnlockedDate)) cardClass+=' ever-on';
+    else cardClass+=' off';
+    return `<div class="${cardClass}"><div class="ach-icon">${a.i}</div>
       <div class="ach-info"><h4>${a.t}</h4><p>${a.d}</p></div>
-      <div class="ach-prog">${on?'✅ 已解锁':a.p}</div></div>`;
+      ${progHtml}</div>`;
   }).join('');
 }
 
@@ -1683,6 +1788,9 @@ function renderTreasure(){
   if(todayHasProgress&&!todayInWeekly){
     displayDays=G.totalDays+1;
   }
+  
+  const isNewCycle=!!(G.dirUnlockedEver||G.dirUnlockedDate);
+  const cycle=G.dirCycleCount||1;
   
   for(let i=0;i<7;i++){
     const div=document.createElement('div');
@@ -1698,23 +1806,65 @@ function renderTreasure(){
     }
     d.appendChild(div);
   }
-  const btn=document.getElementById('btnChest');
-  if(displayDays>=7){
-    btn.disabled=false;
-    btn.textContent='🎉 开启成长宝箱！';
-    document.getElementById('treasureChest').textContent='🎁';
+  
+  // 【v8.7】宝箱区域标题和描述根据是否新周期变化
+  const treasureInfo=document.querySelector('.treasure-info');
+  const btnChest=document.getElementById('btnChest');
+  
+  if(isNewCycle){
+    // 新一轮挑战样式
+    treasureInfo.innerHTML=`🔄 <b>第${cycle+1}轮挑战</b><br>再次集满<b>7天</b>开启新宝箱！<br>✨ 已完成 <b>${cycle}</b> 轮挑战 ✨`;
+    
+    if(displayDays>=7){
+      btnChest.disabled=false;
+      btnChest.textContent='🎉 再次开启成长宝箱！';
+      btnChest.style.display='';
+      document.getElementById('treasureChest').textContent='🎁';
+    }else{
+      btnChest.disabled=true;
+      btnChest.textContent=`🔄 新一轮挑战 ${displayDays}/7 天`;
+      btnChest.style.display='';
+      document.getElementById('treasureChest').textContent='🧰';
+    }
   }else{
-    btn.disabled=true;
-    btn.textContent=`🔒 还需 ${7-displayDays} 天`;
+    // 首次挑战
+    treasureInfo.innerHTML='集满<b>7天</b>宝石可兑换<br>✨<b>「故事导演权」</b>✨<br>自己编故事加入游戏！';
+    
+    if(displayDays>=7){
+      btnChest.disabled=false;
+      btnChest.textContent='🎉 开启成长宝箱！';
+      btnChest.style.display='';
+      document.getElementById('treasureChest').textContent='🎁';
+    }else{
+      btnChest.disabled=true;
+      btnChest.textContent=`🔒 还需 ${7-displayDays} 天`;
+      btnChest.style.display='';
+    }
   }
+  
   if(G.dirUnlocked)document.getElementById('directorMode').classList.add('show');
   renderMyStories();renderCollected();
 }
 function openChest(){
-  G.dirUnlocked=true;G.ach.storyDirector=true;save();
+  const isNewCycle=!!(G.dirUnlockedEver||G.dirUnlockedDate);
+  const cycle=(G.dirCycleCount||0)+1;
+  
+  G.dirUnlocked=true;G.ach.storyDirector=true;
+  G.dirUnlockedEver=true;
+  G.dirCycleCount=cycle;
+  // 【v8.7】记录解锁日期，totalDays重新计算（解锁后的第二天开始新一轮）
+  G.dirUnlockedDate=new Date().toDateString();
+  G.totalDays=0;
+  save();
   document.getElementById('directorMode').classList.add('show');
-  document.getElementById('btnChest').style.display='none';
-  showAchModal('🎬 故事导演权解锁！',{text:'🎉🎉🎉 恭喜恭喜！\n\n你坚持了整整7天！你是最棒的故事收集家！\n\n作为奖励，你现在拥有了「故事导演权」——可以自己编写故事加入游戏！\n\n快去写下你自己的故事吧！✨'});
+  
+  if(isNewCycle){
+    // 新一轮挑战完成
+    showAchModal(`🎬 第${cycle}轮挑战完成！`,{text:`🎉🎉🎉 太厉害了！\n\n你又坚持了整整7天！这是你的第 ${cycle} 轮挑战成功！\n\n你是真正的故事大师！继续加油！\n\n明天开始第 ${cycle+1} 轮挑战！💪`});
+  }else{
+    // 首次解锁
+    showAchModal('🎬 故事导演权解锁！',{text:'🎉🎉🎉 恭喜恭喜！\n\n你坚持了整整7天！你是最棒的故事收集家！\n\n作为奖励，你现在拥有了「故事导演权」——可以自己编写故事加入游戏！\n\n快去写下你自己的故事吧！✨\n\n明天开始新一轮7天挑战！💪'});
+  }
   renderAch();renderTreasure();
 }
 function submitStory(){
@@ -1794,18 +1944,31 @@ function updateStatus(){
   }
   document.getElementById('streakCount').textContent=displayStreak;
   
+  // 【v8.7】徽章：导演徽章用 dirUnlockedEver（永久保留），其他跟随当周成就
   const badges=document.getElementById('titleBadges');let bh='';
   if(G.ach.jumpHero)bh+='<span class="badge hero">🦸‍♀️ 跳绳小英雄</span>';
   if(G.ach.waterSpirit)bh+='<span class="badge water">🧜‍♀️ 水中精灵</span>';
-  if(G.ach.storyDirector)bh+='<span class="badge dir">🎬 故事导演</span>';
+  if(G.dirUnlockedEver||G.ach.storyDirector)bh+='<span class="badge dir">🎬 故事导演</span>';
   badges.innerHTML=bh;
   
   let displayTotalDays=G.totalDays;
   if(todayHasProgress&&!todayInWeekly)displayTotalDays++;
   
-  if(displayTotalDays>=7){document.getElementById('crownIcon').style.display='';document.getElementById('playerTitle').textContent='传奇故事收集家'}
-  else if(displayTotalDays>=3)document.getElementById('playerTitle').textContent='资深冒险者';
-  else if(displayStreak>=1)document.getElementById('playerTitle').textContent='初级冒险者';
+  // 【v8.7】头衔和皇冠：新周期中可以降级，达标后重新升级
+  const crownEl=document.getElementById('crownIcon');
+  if(displayTotalDays>=7){
+    if(crownEl)crownEl.style.display='';
+    document.getElementById('playerTitle').textContent='传奇故事收集家';
+  }else if(displayTotalDays>=3){
+    if(crownEl)crownEl.style.display='none';
+    document.getElementById('playerTitle').textContent='资深冒险者';
+  }else if(displayStreak>=1){
+    if(crownEl)crownEl.style.display='none';
+    document.getElementById('playerTitle').textContent='初级冒险者';
+  }else{
+    if(crownEl)crownEl.style.display='none';
+    document.getElementById('playerTitle').textContent='见习冒险者';
+  }
 }
 
 // ===== 初始化 =====
