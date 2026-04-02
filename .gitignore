@@ -1,0 +1,24 @@
+# 部署脚本
+deploy.py
+build.py
+surge_deploy.exp
+vercel_deploy.exp
+
+# 测试文件
+test-data.html
+test-runner.js
+
+# 版本快照（本地保留，不推送）
+故事收集家-打卡游戏-*.html
+故事收集家-完整产品方案-*.md
+主题预览-*.html
+
+# 独立版本
+story-game-standalone.html
+
+# 生成的图片
+generated-images/
+
+# 系统文件
+.DS_Store
+.codebuddy/
