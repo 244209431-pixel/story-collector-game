@@ -836,3 +836,88 @@ body::before{
   font-size:13px;
   font-weight:600;
 }
+
+/* ============ 【v10.0】勋章墙 ============ */
+.medal-wall-card{
+  background:linear-gradient(135deg,rgba(255,215,0,0.08),rgba(255,111,183,0.08),rgba(168,85,247,0.08))!important;
+  border-color:rgba(255,215,0,0.25)!important;
+}
+.medal-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:12px;
+}
+.medal-item{
+  text-align:center;
+  padding:16px 8px;
+  border-radius:18px;
+  transition:.3s;
+  cursor:pointer;
+  position:relative;
+}
+.medal-item.earned{
+  background:linear-gradient(135deg,rgba(255,215,0,0.15),rgba(255,111,183,0.15));
+  border:2px solid rgba(255,215,0,0.4);
+  box-shadow:0 4px 15px rgba(255,215,0,0.2);
+}
+.medal-item.earned:hover{
+  transform:translateY(-3px);
+  box-shadow:0 6px 20px rgba(255,215,0,0.3);
+}
+.medal-item.earned:active{
+  transform:scale(0.95);
+}
+.medal-item.locked{
+  background:rgba(168,85,247,0.06);
+  border:2px dashed rgba(168,85,247,0.2);
+  opacity:0.5;
+  cursor:default;
+}
+.medal-icon{
+  font-size:40px;
+  display:block;
+  margin-bottom:6px;
+}
+.medal-item.earned .medal-icon{
+  animation:medalGlow 2s ease-in-out infinite;
+}
+@keyframes medalGlow{
+  0%,100%{filter:drop-shadow(0 0 4px rgba(255,215,0,0.3));transform:scale(1)}
+  50%{filter:drop-shadow(0 0 10px rgba(255,215,0,0.6));transform:scale(1.08)}
+}
+.medal-title{
+  font-size:13px;
+  font-weight:700;
+  color:var(--t1);
+  margin-bottom:2px;
+}
+.medal-date{
+  font-size:11px;
+  color:var(--t3);
+}
+.medal-empty{
+  text-align:center;
+  padding:30px 20px;
+  color:var(--t3);
+}
+.medal-empty p{
+  margin-top:12px;
+  font-size:14px;
+  line-height:1.8;
+}
+
+/* 勋章徽章 */
+.badge.medal-badge{
+  background:linear-gradient(135deg,#FFD700,#FBBF24);
+  color:#5A2D0C;
+}
+
+/* ============ 【v10.0】宝箱页按周展示新增样式 ============ */
+.t-day.partial-day{
+  border-color:rgba(251,146,36,0.4);
+  background:rgba(251,146,36,0.1);
+  color:#FB923C;
+}
+.t-day.future-day{
+  opacity:0.3;
+}

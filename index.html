@@ -55,7 +55,7 @@
           </div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-          <div class="streak-badge">🔥 <span id="streakCount">0</span>天连续</div>
+          <div class="streak-badge">🔥 本周连续<span id="streakCount">0</span>天</div>
           <div style="display:flex;align-items:center;gap:6px">
             <span id="syncInfo" style="font-size:11px;color:var(--t3)">☁️ 等待同步</span>
             <span class="sync-dot" id="syncDot" title="云端同步状态">☁️</span>
@@ -99,6 +99,15 @@
   <div class="page" id="achievePage">
     <div class="page-pad">
       <div class="card"><h3>🏆 隐藏剧情 & 成就</h3><div id="achievementsList"></div></div>
+      <div class="card medal-wall-card">
+        <h3>🏅 勋章墙</h3>
+        <p style="font-size:13px;color:var(--t3);margin-bottom:14px">一周7天全部完成打卡，周日获得一枚独特勋章！</p>
+        <div class="medal-grid" id="medalGrid"></div>
+        <div class="medal-empty" id="medalEmpty" style="display:none">
+          <span style="font-size:36px">🔒</span>
+          <p>还没有获得勋章哦~<br>坚持一周7天全部完成打卡就能获得！</p>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -156,6 +165,7 @@
   </div>
 </div>
 
+<script src="stories.js"></script>
 <script src="game.js"></script>
 </body>
 </html>
