@@ -1,6 +1,6 @@
 // ==========================================
 // 🎮 故事收集家 - 游戏核心引擎（智能多设备同步版）
-// v9.0 — 故事去重+大量新故事 + 宝箱周期计数修复
+// v10.0 — 按周打卡 + 勋章系统 + 故事大扩充
 // ==========================================
 
 // ===== 云同步配置 =====
@@ -26,40 +26,32 @@ const JUMP=[1,2,4,6,0], SWIM=[3,5];
 // 【v8.4】周一起始：将 JS 的 getDay()（0=日）转换为周一起始的偏移（0=一,1=二...6=日）
 function mondayDow(d){ const dow=(typeof d==='number')?d:d.getDay(); return (dow+6)%7; }
 
-const STORIES={
-  jump:[
-    {title:"🌈 彩虹跳绳手",preview:"传说在云端之上，有一位用跳绳编织彩虹的少女...",
-     text:"很久很久以前，在棉花糖云朵的最顶端，住着一位叫小星星的女孩。她有一根神奇的跳绳，每跳一下，绳子划过的地方就会出现一道彩虹色的光芒。\n\n有一天，天空中的颜色突然消失了，整个世界变成了灰白色。小星星决定用她的跳绳来拯救世界。\n\n她跳了100下，红色回来了，花朵重新绽放；她跳了200下，橙色和黄色回来了，太阳重新发光；她继续跳啊跳...",
-     choices:[{text:"🌟 小星星跳满1000下，所有颜色都回来了！",ending:"彩虹结局"},{text:"🦋 一只彩色蝴蝶带她飞上了更高的云朵",ending:"蝴蝶结局"}]},
-    {title:"🏰 节奏城堡的秘密",preview:"在节奏城堡里，每一跳都是打开城门的钥匙...",
-     text:"在遥远的音乐王国，有一座用节奏建成的城堡。这座城堡的门锁很特别——只有用跳绳的节奏才能打开。\n\n小月亮听说城堡最高塔里藏着一本能让梦想成真的故事书。她带上跳绳，来到了城堡前。\n\n\"咚-咚-咚\"，她按照节奏跳起来。第一扇门打开了，里面是一个满是泡泡的大厅。第二扇门后面是一个倒挂的花园...",
-     choices:[{text:"🎵 她用最快的节奏打开了故事书！",ending:"音乐结局"},{text:"🌸 她在倒挂花园里发现了秘密通道",ending:"花园结局"}]},
-    {title:"⭐ 星光跳跃者",preview:"当跳绳碰到地面的瞬间，星光就会亮起...",
-     text:"在银河系的某个角落，有一颗叫做「跳跳星」的小行星。这里的居民靠跳跃产生的能量来发光。\n\n小豆豆是星球上最棒的跳绳手。今天，星球的能量快要耗尽了，天空越来越暗。\n\n\"如果不赶快跳够1000下，我们的星球就会熄灭！\"长老焦急地说。\n\n小豆豆紧紧握住跳绳，深吸一口气...",
-     choices:[{text:"💫 星球重新发出耀眼的光芒！",ending:"闪耀结局"},{text:"🚀 她跳得太高飞到了太空，遇见了外星朋友",ending:"太空结局"}]},
-    {title:"🌺 花园精灵的请求",preview:"一个声音从花丛中传来：请帮帮我们...",
-     text:"放学回家的路上，小叶子听到了一个细小的声音。她蹲下来仔细看，发现一朵小花里藏着一个巴掌大的精灵！\n\n\"你好呀，我叫花花，我们花园精灵王国遇到了大麻烦。坏心的枯叶巫师封印了我们的花园，只有跳绳的快乐能量才能解除封印。\"\n\n小叶子二话不说拿出了跳绳。每跳一下，就有一朵花重新绽放...",
-     choices:[{text:"🌻 花园恢复了，精灵们送了她一顶花冠",ending:"花冠结局"},{text:"🧚 小叶子变小成了精灵王国荣誉公民",ending:"精灵结局"}]},
-    {title:"🎪 魔法马戏团",preview:"一张闪闪发光的门票从天而降...",
-     text:"一个下午，一张金色的门票从天而降。上面写着：\"魔法马戏团——今晚特别演出：跳绳之星\"\n\n她来到帐篷前，发现这里的一切都是倒过来的！小丑在天花板上走路，大象在吹泡泡，狮子在跳芭蕾舞。\n\n\"我们缺一位跳绳表演者，\"穿着星星斗篷的团长说，\"只有跳够1000下，才能让魔法运转起来。\"",
-     choices:[{text:"🎪 演出大成功！月亮和星星都来鼓掌了",ending:"明星结局"},{text:"🎩 她获得了一顶能变出糖果的魔法帽子",ending:"魔法结局"}]}
-  ],
-  swim:[
-    {title:"🧜‍♀️ 珊瑚王国历险记",preview:"在大海的最深处，隐藏着珊瑚做成的王国...",
-     text:"游泳课结束后，小鱼发现泳池的水变成了蔚蓝色，还有小鱼在游来游去！\n\n她潜入水中，惊讶地发现自己能在水下呼吸。一条金色的小鱼说：\"欢迎来到珊瑚王国！国王想见你。\"\n\n珊瑚王国真美啊！到处是五颜六色的珊瑚，水母像灯笼一样发着光...",
-     choices:[{text:"🐚 她成为了珊瑚公主！",ending:"公主结局"},{text:"🐬 她和海豚去探索海底洞穴",ending:"海豚结局"}]},
-    {title:"💧 水之歌",preview:"每一滴水都在唱歌，你听到了吗？",
-     text:"小水滴最喜欢游泳课了。今天她隐约听到了水里传来的歌声。\n\n\"来吧来吧，跟我们一起唱歌~\"水精灵们正在准备水下音乐会。\n\n\"我们的指挥家迷路了，没有指挥音乐会开不了。你愿意帮忙吗？\"",
-     choices:[{text:"🎶 她成为了水下音乐会的指挥！",ending:"音乐家结局"},{text:"🌊 她跟着音乐找到了秘密瀑布和宝藏",ending:"宝藏结局"}]},
-    {title:"🐢 海龟爷爷的地图",preview:"一只古老的海龟带来了藏宝图...",
-     text:"在泳池角落，小贝发现了一只小海龟——它居然在动！\n\n\"我已经活了一千年了，\"海龟爷爷说，\"我有一张通往海底花园的地图。只有会游泳的勇敢孩子才能找到那里。\"\n\n地图标注着三个关卡：漩涡通道、水母森林和鲸鱼之门...",
-     choices:[{text:"🌺 她找到了永不凋谢的海底花园",ending:"花园结局"},{text:"🐋 她骑上大鲸鱼环游了整个海洋",ending:"环游结局"}]}
-  ],
-  hero:{title:"🦸‍♀️ 跳绳小英雄 · 专属篇章",
-    text:"🎉 恭喜！本周跳绳打卡满3天，解锁隐藏章节！\n\n在跳绳王国里，有一个古老的传说——当勇士一周内跳绳满三天，跳绳之神就会出现。\n\n今天，当你跳完最后一个的时候，一道金色光芒笼罩了你。跳绳变成了闪耀的丝带，脚下出现了云朵。\n\n\"你就是跳绳小英雄！你的跳绳将拥有彩虹的力量！\"\n\n你高高地跳起来，在空中画出了完美的彩虹。所有朋友都在为你欢呼！"},
-  spirit:{title:"🧜‍♀️ 水中精灵 · 觉醒篇",
-    text:"🌊 太棒了！本周游泳课满两次，获得'水中精灵'称号！\n\n当你第二次从泳池出来时，水滴没有掉落——它们在你周围轻轻飘浮。\n\n\"是时候了，\"水之女神说，\"你就是水中精灵！\"\n\n你的故事里多了一个新角色——水之精灵。它会在你困难时化作泉水给你力量，开心时变成喷泉为你庆祝！\n\n✨ 水中精灵已加入你的故事伙伴团！"}
-};
+// 故事数据已移至 stories.js（STORIES 全局变量）
+
+// ===== 【v10.0】勋章预设列表（按获得顺序依次发放） =====
+const MEDAL_LIST = [
+  { icon:'⚔️', title:'初心勇士', desc:'第一周满勤！你是最棒的！' },
+  { icon:'🛡️', title:'坚毅骑士', desc:'连续两周满勤，你的意志力真强！' },
+  { icon:'🌟', title:'闪耀之星', desc:'三周满勤！你是夜空中最亮的星！' },
+  { icon:'🔥', title:'烈焰战士', desc:'四周满勤！燃烧吧小宇宙！' },
+  { icon:'🦁', title:'勇猛狮王', desc:'五周满勤！你的勇气令人敬佩！' },
+  { icon:'🐉', title:'神龙骑士', desc:'六周满勤！传说级的坚持！' },
+  { icon:'👑', title:'王者冠军', desc:'七周满勤！你就是冠军！' },
+  { icon:'💎', title:'钻石精英', desc:'八周满勤！钻石般闪耀的毅力！' },
+  { icon:'🌈', title:'彩虹使者', desc:'九周满勤！你就是希望的化身！' },
+  { icon:'🦄', title:'独角兽勇者', desc:'十周满勤！传说中的坚持！' },
+  { icon:'🏆', title:'传奇大师', desc:'十一周满勤！你已经是传奇！' },
+  { icon:'⭐', title:'超级巨星', desc:'十二周满勤！三个月的坚持！' },
+  { icon:'🎖️', title:'荣耀将军', desc:'十三周满勤！真正的将军风范！' },
+  { icon:'🗡️', title:'圣剑骑士', desc:'十四周满勤！手握圣剑的勇者！' },
+  { icon:'🐺', title:'银狼猎手', desc:'十五周满勤！敏捷如狼！' },
+  { icon:'🦅', title:'雄鹰翱翔', desc:'十六周满勤！展翅高飞！' },
+  { icon:'🌸', title:'樱花武士', desc:'十七周满勤！温柔又坚强！' },
+  { icon:'🐲', title:'金龙至尊', desc:'十八周满勤！至尊级别！' },
+  { icon:'✨', title:'星辰魔法师', desc:'十九周满勤！掌握了星辰之力！' },
+  { icon:'🎭', title:'命运主宰者', desc:'二十周满勤！你主宰了自己的命运！' },
+  { icon:'🏅', title:'不朽传说', desc:'二十周以上！你已经超越了传说！' },
+];
 
 // ===== 生成一个干净的默认状态 =====
 function makeDefaultState(){
@@ -72,9 +64,12 @@ function makeDefaultState(){
     collected:[],myStories:[],
     ach:{jumpHero:false,waterSpirit:false,storyDirector:false,goodHabit:false},
     consJump:0,weekSwim:0,totalDays:0,dirUnlocked:false,dirUnlockedDate:null,
-    dirUnlockedEver:false, // 【v8.7】是否曾经解锁过故事导演权（永久标记，用于徽章永久保留）
-    dirCycleCount:0, // 【v8.7】已完成的挑战轮数
-    history:{}
+    dirUnlockedEver:false,
+    dirCycleCount:0,
+    history:{},
+    // 【v10.0 新增】
+    medals:[],           // 源数据：已获得的勋章列表 [{ weekId, title, icon, desc, earnedDate }]
+    weeklyFullDays:0,    // 派生数据：本周全部完成（allDone）的天数（0-7），用于宝箱进度
   };
 }
 
@@ -118,11 +113,14 @@ function save(){
   }
 
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v8'};
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v10'};
   localStorage.setItem(key,JSON.stringify(data));
   console.log('[save] 已保存, history keys=',Object.keys(G.history).length,', weekly keys=',Object.keys(G.weekly).length);
   // 异步同步到云端（每次保存都同步）
   cloudSave(data);
+  
+  // 【v10.0】每次保存后检测勋章（异步，不阻塞保存流程）
+  checkWeeklyMedal();
 }
 
 // ===== 加载 =====
@@ -158,6 +156,8 @@ function load(){
       if(typeof d.dirUnlockedEver==='boolean') G.dirUnlockedEver=d.dirUnlockedEver;
       if(typeof d.dirCycleCount==='number') G.dirCycleCount=d.dirCycleCount;
       if(d.history&&typeof d.history==='object') G.history={...d.history};
+      // 【v10.0】加载勋章数据
+      if(Array.isArray(d.medals)) G.medals=[...d.medals];
       
       console.log('[load] 原始数据加载完成, date=',G.date);
       console.log('[load] history keys=',Object.keys(G.history));
@@ -314,17 +314,19 @@ function repairData(){
     console.log('[修复] 补 dirUnlockedEver=true');
   }
   
+  // 【v10.0】修复 medals 迁移（旧数据没有 medals 字段）
+  if(!Array.isArray(G.medals)) G.medals=[];
+  
   // 第二步：重新统计 totalDays（【v8.7】支持故事导演权解锁后重新计算）
   // 如果已经解锁过故事导演权，则只计算解锁那天之后的打卡天数
+  // 【v10.0】注意：totalDays 仍用于宝箱导演权周期，但只统计 allDone===true
   let realTotalDays=0;
   if(G.dirUnlockedDate){
-    // 从解锁日期的下一天开始计算
     const unlockDate=new Date(G.dirUnlockedDate);
     unlockDate.setDate(unlockDate.getDate()+1);
-    const unlockNextStr=unlockDate.toDateString();
     Object.keys(G.weekly).forEach(dateStr=>{
       const val=G.weekly[dateStr];
-      if(val===true||val==='partial'){
+      if(val===true){  // 【v10.0】只有全部完成才计入
         const d=new Date(dateStr);
         if(d>=unlockDate) realTotalDays++;
       }
@@ -333,7 +335,7 @@ function repairData(){
   }else{
     Object.keys(G.weekly).forEach(dateStr=>{
       const val=G.weekly[dateStr];
-      if(val===true||val==='partial') realTotalDays++;
+      if(val===true) realTotalDays++;  // 【v10.0】只有全部完成才计入
     });
   }
   
@@ -342,34 +344,53 @@ function repairData(){
     G.totalDays=realTotalDays;
   }
   
-  // 第三步：重新计算 streak
+  // 第三步：重新计算 streak（【v10.0】限定在本周范围内，只有 allDone===true 才算连续）
   const today=new Date();
-  let checkDate=new Date(today);
-  // 从昨天开始往回数（今天可能还没完成）
-  checkDate.setDate(checkDate.getDate()-1);
   
+  // 【v10.0】计算本周 weekDates（周一到周日）
+  const todayDate_s=new Date();
+  const todayDow_s=todayDate_s.getDay();
+  const mDow_s=mondayDow(todayDow_s);
+  const weekDates_s=[];
+  for(let i=0;i<7;i++){
+    const d=new Date(todayDate_s);
+    d.setDate(todayDate_s.getDate()-mDow_s+i);
+    weekDates_s.push(d.toDateString());
+  }
+  
+  // 从今天往回数到周一，只要连续 true 就计 streak
   let realStreak=0;
-  for(let i=0;i<365;i++){
-    const ds=checkDate.toDateString();
-    const val=G.weekly[ds];
-    if(val===true||val==='partial'){
-      realStreak++;
-      checkDate.setDate(checkDate.getDate()-1);
-    }else{
-      break;
+  const todayIdx=mDow_s; // 今天在本周中的位置（0=周一，6=周日）
+  
+  // 先检查今天
+  const todayStr_s=todayDate_s.toDateString();
+  if(G.weekly[todayStr_s]===true){
+    realStreak=1;
+    // 再从昨天往回数
+    for(let i=todayIdx-1;i>=0;i--){
+      if(G.weekly[weekDates_s[i]]===true){
+        realStreak++;
+      }else{
+        break;
+      }
+    }
+  }else{
+    // 今天没有全部完成，从昨天开始计
+    for(let i=todayIdx-1;i>=0;i--){
+      if(G.weekly[weekDates_s[i]]===true){
+        realStreak++;
+      }else{
+        break;
+      }
     }
   }
   
-  // 也检查今天是否已有记录
-  const todayStr=today.toDateString();
-  if(G.weekly[todayStr]===true||G.weekly[todayStr]==='partial'){
-    // 今天也有记录，加到连续中（如果昨天也有）
-    if(realStreak>0){
-      realStreak++; // 昨天有+今天有 = 连续+1
-    }else{
-      realStreak=1; // 只有今天
-    }
-  }
+  // 【v10.0】计算本周全部完成天数（weeklyFullDays，派生数据）
+  let weekFullCount=0;
+  weekDates_s.forEach(ds=>{
+    if(G.weekly[ds]===true) weekFullCount++;
+  });
+  G.weeklyFullDays=weekFullCount;
   
   // streak 总是取最新计算的值（不只是"更大时"修复）
   if(realStreak!==G.streak){
@@ -631,6 +652,8 @@ async function cloudLoad(){
           if(typeof data.dirUnlockedEver==='boolean') G.dirUnlockedEver=data.dirUnlockedEver;
           if(typeof data.dirCycleCount==='number') G.dirCycleCount=data.dirCycleCount;
           if(data.history&&typeof data.history==='object') G.history={...data.history};
+          // 【v10.0】恢复勋章数据
+          if(Array.isArray(data.medals)) G.medals=[...data.medals];
           
           // 恢复后执行跨天处理
           const today=new Date().toDateString();
@@ -735,6 +758,17 @@ async function cloudLoad(){
           if(data.dirUnlockedDate&&!G.dirUnlockedDate){G.dirUnlockedDate=data.dirUnlockedDate;changed=true;}
           if(data.dirUnlockedEver&&!G.dirUnlockedEver){G.dirUnlockedEver=true;changed=true;}
           if(typeof data.dirCycleCount==='number'&&data.dirCycleCount>G.dirCycleCount){G.dirCycleCount=data.dirCycleCount;changed=true;}
+          // 【v10.0】合并勋章（按 weekId 去重合并，只增不删）
+          if(Array.isArray(data.medals)){
+            const existingWeekIds=new Set(G.medals.map(m=>m.weekId));
+            data.medals.forEach(m=>{
+              if(m.weekId&&!existingWeekIds.has(m.weekId)){
+                G.medals.push(m);
+                changed=true;
+                console.log('[cloudLoad] 合并勋章:',m.weekId,m.title);
+              }
+            });
+          }
         }
         
         if(changed){
@@ -764,7 +798,7 @@ async function cloudLoad(){
       isFirstLoad=false;
       // 只保存到本地，不触发 cloudSave，避免空数据覆盖云端
       const key=SYNC_STORAGE_PREFIX+currentUser;
-      const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v8'};
+      const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v10'};
       localStorage.setItem(key,JSON.stringify(data));
       console.log('[cloudLoad] 首次加载云端失败，仅保存到本地（不覆盖云端）');
     }
@@ -805,7 +839,7 @@ async function manualSync(){
     
     // 合并完成后再上传合并后的数据到云端
     console.log('[manualSync] 第二步：上传合并后的数据到云端...');
-    const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v8'};
+    const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v10'};
     const saveOk=await cloudSave(data);
     
     if(saveOk){
@@ -904,7 +938,7 @@ async function doLogin(){
     if(!currentUser)return;
     try{
       await cloudLoad();
-      await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v8'});
+      await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v10'});
     }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
   },30000);
 }
@@ -1720,6 +1754,143 @@ function selectEnd(e){
 }
 function closeModal(id){document.getElementById(id).classList.remove('show')}
 
+// ===== 【v10.0】勋章系统 =====
+// 计算某个日期所在周的 weekId（格式：YYYY-WNN）
+function getWeekId(dateObj){
+  const d=new Date(dateObj);
+  // ISO 周数计算
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate()+3-(d.getDay()+6)%7);
+  const yearStart=new Date(d.getFullYear(),0,4);
+  const weekNum=Math.ceil(((d-yearStart)/86400000+1)/7);
+  return d.getFullYear()+'-W'+(weekNum<10?'0':'')+weekNum;
+}
+
+// 检测本周是否满勤，触发勋章获得
+function checkWeeklyMedal(){
+  if(!G.medals) G.medals=[];
+  
+  const today=new Date();
+  const todayDow=today.getDay();
+  const mDow=mondayDow(todayDow);
+  
+  // 计算本周一到周日的 dateString
+  const weekDates=[];
+  for(let i=0;i<7;i++){
+    const d=new Date(today);
+    d.setDate(today.getDate()-mDow+i);
+    weekDates.push(d.toDateString());
+  }
+  
+  // 检查本周7天是否全部 allDone===true
+  let allWeekDone=true;
+  for(let i=0;i<7;i++){
+    if(G.weekly[weekDates[i]]!==true){
+      allWeekDone=false;
+      break;
+    }
+  }
+  
+  if(!allWeekDone) return; // 没有满勤，不触发
+  
+  // 检查本周是否已获得勋章
+  const weekId=getWeekId(today);
+  if(G.medals.some(m=>m.weekId===weekId)) return; // 已获得
+  
+  // 满勤且未获得 → 发放勋章！
+  const medalIdx=G.medals.length;
+  const medalDef=medalIdx<MEDAL_LIST.length?MEDAL_LIST[medalIdx]:MEDAL_LIST[MEDAL_LIST.length-1];
+  
+  const newMedal={
+    weekId:weekId,
+    icon:medalDef.icon,
+    title:medalIdx>=MEDAL_LIST.length?medalDef.title+' #'+(medalIdx-MEDAL_LIST.length+2):medalDef.title,
+    desc:medalDef.desc,
+    earnedDate:today.toDateString()
+  };
+  
+  G.medals.push(newMedal);
+  console.log('[勋章] 获得新勋章！',newMedal.title,newMedal.weekId);
+  
+  // 保存（不再递归调用 save，直接本地保存）
+  const key=SYNC_STORAGE_PREFIX+currentUser;
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v10'};
+  localStorage.setItem(key,JSON.stringify(data));
+  cloudSave(data);
+  
+  // 播放庆祝动画和勋章弹窗
+  setTimeout(()=>{
+    bigConfetti();
+    showMedalModal(newMedal);
+    renderMedals();
+  },500);
+}
+
+// 显示勋章获得弹窗
+function showMedalModal(medal){
+  document.getElementById('mAchTitle').textContent='🏅 恭喜获得新勋章！';
+  document.getElementById('mAchBody').innerHTML=`
+    <div style="text-align:center;padding:20px 0">
+      <div style="font-size:80px;margin-bottom:16px;animation:cf 2s ease-in-out infinite">${medal.icon}</div>
+      <h3 style="font-size:24px;background:linear-gradient(135deg,#FFD700,#FB923C);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px">${medal.title}</h3>
+      <p style="font-size:16px;color:var(--t2);line-height:1.8;margin-bottom:12px">${medal.desc}</p>
+      <div style="font-size:14px;color:var(--t3);padding:10px;background:rgba(255,215,0,0.1);border-radius:12px;border:1px solid rgba(255,215,0,0.2)">
+        🎉 这是你的第 <b style="color:var(--gold);font-size:18px">${G.medals.length}</b> 枚勋章！<br>
+        📅 获得日期：${new Date(medal.earnedDate).getMonth()+1}月${new Date(medal.earnedDate).getDate()}日
+      </div>
+    </div>`;
+  document.getElementById('achieveModal').classList.add('show');
+}
+
+// 渲染勋章墙
+function renderMedals(){
+  const grid=document.getElementById('medalGrid');
+  const empty=document.getElementById('medalEmpty');
+  if(!grid||!empty)return;
+  
+  if(!G.medals||G.medals.length===0){
+    grid.innerHTML='';
+    grid.style.display='none';
+    empty.style.display='block';
+    return;
+  }
+  
+  grid.style.display='';
+  empty.style.display='none';
+  
+  // 显示已获得的勋章 + 下一枚待解锁的
+  let html='';
+  G.medals.forEach((m,idx)=>{
+    const earnedDate=new Date(m.earnedDate);
+    const dateStr=`${earnedDate.getMonth()+1}/${earnedDate.getDate()}`;
+    html+=`<div class="medal-item earned" onclick="showMedalDetail(${idx})">
+      <div class="medal-icon">${m.icon}</div>
+      <div class="medal-title">${m.title}</div>
+      <div class="medal-date">${dateStr}</div>
+    </div>`;
+  });
+  
+  // 显示下一枚待解锁的勋章（灰色锁定）
+  const nextIdx=G.medals.length;
+  if(nextIdx<MEDAL_LIST.length){
+    const nextMedal=MEDAL_LIST[nextIdx];
+    html+=`<div class="medal-item locked">
+      <div class="medal-icon">🔒</div>
+      <div class="medal-title">第${nextIdx+1}周</div>
+      <div class="medal-date">待解锁</div>
+    </div>`;
+  }
+  
+  grid.innerHTML=html;
+}
+
+// 显示已获得勋章的详情
+function showMedalDetail(idx){
+  if(!G.medals||!G.medals[idx])return;
+  const medal=G.medals[idx];
+  showMedalModal(medal);
+}
+
 // ===== 成就 =====
 function checkJumpHero(){
   if(G.consJump>=3&&!G.ach.jumpHero){G.ach.jumpHero=true;save();
@@ -1781,63 +1952,93 @@ function renderAch(){
 // ===== 宝箱 =====
 function renderTreasure(){
   const d=document.getElementById('treasureDays');d.innerHTML='';
-  let displayDays=G.totalDays;
-  const todayHasProgress=Object.values(G.tasks).some(v=>v);
-  const todayStr=new Date().toDateString();
-  const todayInWeekly=G.weekly[todayStr]===true||G.weekly[todayStr]==='partial';
-  if(todayHasProgress&&!todayInWeekly){
-    displayDays=G.totalDays+1;
+  
+  // 【v10.0】按周展示宝箱碎片：本周一到周日，allDone===true 才点亮
+  const todayDate=new Date();
+  const todayDow=todayDate.getDay();
+  const mDow=mondayDow(todayDow);
+  const weekDates=[];
+  for(let i=0;i<7;i++){
+    const wd=new Date(todayDate);
+    wd.setDate(todayDate.getDate()-mDow+i);
+    weekDates.push(wd.toDateString());
   }
   
-  const isNewCycle=!!(G.dirUnlockedEver||G.dirUnlockedDate);
-  const cycle=G.dirCycleCount||1;
+  const weekLabels=['一','二','三','四','五','六','日'];
+  let weekFullCount=0;
   
   for(let i=0;i<7;i++){
+    const ds=weekDates[i];
+    const isToday=ds===todayDate.toDateString();
+    const status=G.weekly[ds];
+    const isAllDone=status===true;
+    const isPartial=status==='partial';
+    const isFuture=new Date(ds)>todayDate&&!isToday;
+    
+    if(isAllDone) weekFullCount++;
+    
     const div=document.createElement('div');
-    if(i<G.totalDays){
+    if(isAllDone){
       div.className='t-day on';
       div.textContent='💎';
-    }else if(i===G.totalDays&&todayHasProgress&&!todayInWeekly){
+    }else if(isToday&&Object.values(G.tasks).every(v=>v)){
+      // 今天刚全部完成但还没存入 weekly
       div.className='t-day on today-progress';
       div.textContent='💎';
+      weekFullCount++;
+    }else if(isPartial){
+      div.className='t-day partial-day';
+      div.textContent='🔶';
+    }else if(isToday&&Object.values(G.tasks).some(v=>v)){
+      div.className='t-day today-progress';
+      div.textContent='🔸';
     }else{
-      div.className='t-day';
-      div.textContent=i+1;
+      div.className='t-day'+(isFuture?' future-day':'');
+      div.textContent=weekLabels[i];
     }
     d.appendChild(div);
   }
   
-  // 【v8.7】宝箱区域标题和描述根据是否新周期变化
+  // 宝箱区域标题和描述
+  const isNewCycle=!!(G.dirUnlockedEver||G.dirUnlockedDate);
+  const cycle=G.dirCycleCount||1;
   const treasureInfo=document.querySelector('.treasure-info');
   const btnChest=document.getElementById('btnChest');
   
+  // 【v10.0】用 totalDays 决定宝箱开启（导演权周期），weekFullCount 用于本周进度展示
+  let displayTotalDays=G.totalDays;
+  const todayAllDone=Object.values(G.tasks).every(v=>v);
+  const todayStr=todayDate.toDateString();
+  const todayInWeekly=G.weekly[todayStr]===true;
+  if(todayAllDone&&!todayInWeekly){
+    displayTotalDays=G.totalDays+1;
+  }
+  
   if(isNewCycle){
-    // 新一轮挑战样式
-    treasureInfo.innerHTML=`🔄 <b>第${cycle+1}轮挑战</b><br>再次集满<b>7天</b>开启新宝箱！<br>✨ 已完成 <b>${cycle}</b> 轮挑战 ✨`;
+    treasureInfo.innerHTML=`🔄 <b>第${cycle+1}轮挑战</b><br>再次集满<b>7天</b>全部完成才能开启新宝箱！<br>✨ 已完成 <b>${cycle}</b> 轮挑战 ✨<br><span style="font-size:13px;color:var(--t3)">本周满勤进度: ${weekFullCount}/7天</span>`;
     
-    if(displayDays>=7){
+    if(displayTotalDays>=7){
       btnChest.disabled=false;
       btnChest.textContent='🎉 再次开启成长宝箱！';
       btnChest.style.display='';
       document.getElementById('treasureChest').textContent='🎁';
     }else{
       btnChest.disabled=true;
-      btnChest.textContent=`🔄 新一轮挑战 ${displayDays}/7 天`;
+      btnChest.textContent=`🔄 新一轮挑战 ${displayTotalDays}/7 天`;
       btnChest.style.display='';
       document.getElementById('treasureChest').textContent='🧰';
     }
   }else{
-    // 首次挑战
-    treasureInfo.innerHTML='集满<b>7天</b>宝石可兑换<br>✨<b>「故事导演权」</b>✨<br>自己编故事加入游戏！';
+    treasureInfo.innerHTML=`集满<b>7天</b>全部完成的宝石可兑换<br>✨<b>「故事导演权」</b>✨<br>自己编故事加入游戏！<br><span style="font-size:13px;color:var(--t3)">本周满勤进度: ${weekFullCount}/7天</span>`;
     
-    if(displayDays>=7){
+    if(displayTotalDays>=7){
       btnChest.disabled=false;
       btnChest.textContent='🎉 开启成长宝箱！';
       btnChest.style.display='';
       document.getElementById('treasureChest').textContent='🎁';
     }else{
       btnChest.disabled=true;
-      btnChest.textContent=`🔒 还需 ${7-displayDays} 天`;
+      btnChest.textContent=`🔒 还需 ${7-displayTotalDays} 天`;
       btnChest.style.display='';
     }
   }
@@ -1935,24 +2136,28 @@ function toggleHabit(k){
 
 // ===== 状态栏 =====
 function updateStatus(){
-  const todayHasProgress=Object.values(G.tasks).some(v=>v);
+  // 【v10.0】streak 展示：本周内的连续全部完成天数
+  const todayAllDone=Object.values(G.tasks).every(v=>v);
   const todayStr=new Date().toDateString();
-  const todayInWeekly=G.weekly[todayStr]===true||G.weekly[todayStr]==='partial';
+  const todayInWeekly=G.weekly[todayStr]===true;
   let displayStreak=G.streak;
-  if(todayHasProgress&&!todayInWeekly){
+  if(todayAllDone&&!todayInWeekly){
     displayStreak=Math.max(G.streak+1,1);
   }
   document.getElementById('streakCount').textContent=displayStreak;
   
   // 【v8.7】徽章：导演徽章用 dirUnlockedEver（永久保留），其他跟随当周成就
+  // 【v10.0】添加勋章数量徽章
   const badges=document.getElementById('titleBadges');let bh='';
   if(G.ach.jumpHero)bh+='<span class="badge hero">🦸‍♀️ 跳绳小英雄</span>';
   if(G.ach.waterSpirit)bh+='<span class="badge water">🧜‍♀️ 水中精灵</span>';
   if(G.dirUnlockedEver||G.ach.storyDirector)bh+='<span class="badge dir">🎬 故事导演</span>';
+  if(G.medals&&G.medals.length>0)bh+='<span class="badge medal-badge">🏅 ×'+G.medals.length+'</span>';
   badges.innerHTML=bh;
   
+  // 【v10.0】totalDays 只统计 allDone
   let displayTotalDays=G.totalDays;
-  if(todayHasProgress&&!todayInWeekly)displayTotalDays++;
+  if(todayAllDone&&!todayInWeekly)displayTotalDays++;
   
   // 【v8.7】头衔和皇冠：新周期中可以降级，达标后重新升级
   const crownEl=document.getElementById('crownIcon');
@@ -1973,7 +2178,7 @@ function updateStatus(){
 
 // ===== 初始化 =====
 function initGame(){
-  createStars();renderDateNav();renderSport();renderGems();renderTasks();renderStoryProg();renderHabits();renderAch();renderTreasure();updateStatus();
+  createStars();renderDateNav();renderSport();renderGems();renderTasks();renderStoryProg();renderHabits();renderAch();renderMedals();renderTreasure();updateStatus();
 }
 
 // ===== 启动 =====
@@ -2021,10 +2226,10 @@ function initGame(){
     if(syncTimer)clearInterval(syncTimer);
     syncTimer=setInterval(async ()=>{
       if(!currentUser)return;
-      // 【v8.0】先拉取云端最新数据合并，再上传（避免覆盖其他设备的新数据）
+      // 【v10.0】先拉取云端最新数据合并，再上传（避免覆盖其他设备的新数据）
       try{
         await cloudLoad();
-        await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v8'});
+        await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v10'});
       }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
     },30000);
   }else{
