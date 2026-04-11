@@ -1341,7 +1341,7 @@ function showHistoryDetail(dateStr){
   if(hist.habits){
     const habitLabels=[
       {k:'fast',e:'⚡',t:'做事快速不拖拉'},
-      {k:'tidy',e:'💊',t:'按时吃维生素D'},
+      {k:'tidy',e:'🥛',t:'按时吃维生素D'},
       {k:'polite',e:'🌙',t:'晚上10点前上床睡觉'}
     ];
     habitLabels.forEach(hl=>{
@@ -1422,7 +1422,7 @@ function backfillDate(dateStr){
     </div>
     <div class="backfill-item" onclick="toggleBackfill(this,'tidy')">
       <span class="bf-cb" id="bf_tidy">⬜</span>
-      <span>💊 按时吃维生素D</span>
+      <span>🥛 按时吃维生素D</span>
     </div>
     <div class="backfill-item" onclick="toggleBackfill(this,'polite')">
       <span class="bf-cb" id="bf_polite">⬜</span>
@@ -2101,7 +2101,7 @@ function renderHabits(){
   if(!l)return;
   const habits=[
     {k:'fast',e:'⚡',t:'做事快速不拖拉',d:'行动力满满，说做就做！'},
-    {k:'tidy',e:'💊',t:'按时吃维生素D',d:'每天按时吃维生素D，长高高！'},
+    {k:'tidy',e:'🥛',t:'按时吃维生素D',d:'每天按时吃维生素D，长高高！'},
     {k:'polite',e:'🌙',t:'晚上10点前上床睡觉',d:'早睡早起，养成好的作息习惯！'}
   ];
   l.innerHTML=habits.map(h=>{
@@ -2121,7 +2121,7 @@ function toggleHabit(k){
     G.tasks.outdoor=true;
     gemAnim('💚');
     renderGems();renderTasks();renderStoryProg();
-    setTimeout(()=>showAchModal('🌟 好习惯之星！',{text:'🎉 太棒了！\n\n你今天的行为习惯全部达标！\n\n做事快速不拖拉 ⚡\n按时吃维生素D 💊\n10点前上床睡觉 🌙\n\n你就是最闪亮的好习惯之星！继续保持哦！✨'}),600);
+    setTimeout(()=>showAchModal('🌟 好习惯之星！',{text:'🎉 太棒了！\n\n你今天的行为习惯全部达标！\n\n做事快速不拖拉 ⚡\n按时吃维生素D 🥛\n10点前上床睡觉 🌙\n\n你就是最闪亮的好习惯之星！继续保持哦！✨'}),600);
     renderAch();
   } else if(allDone){
     G.tasks.outdoor=true;
