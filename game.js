@@ -437,7 +437,7 @@ function repairData(){
       realWeekSwim++;
     }
   }
-  if(G.tasks.sport && JUMP.includes(todayDow) && G.jumpCount>=1000){
+  if(G.tasks.sport && JUMP.includes(todayDow) && G.jumpCount>=1500){
     if(!todayHistRec || todayHistRec.sportType!=='jump' || todayHistRec.jumpCount<1000){
       realWeekJump++;
     }
@@ -1323,7 +1323,7 @@ function showHistoryDetail(dateStr){
   
   let tasksHtml='';
   const taskLabels=[
-    {k:'sport',e:isJ?'🏃‍♀️':'🏊‍♀️',t:isJ?`跳绳 ${hist.jumpCount}/1000`:(hist.swimDone?'游泳课 ✅':'游泳课 ❌')},
+    {k:'sport',e:isJ?'🏃‍♀️':'🏊‍♀️',t:isJ?`跳绳 ${hist.jumpCount}/${hist.jumpCount>=1000&&hist.jumpCount<=1000?1000:1500}`:(hist.swimDone?'游泳课 ✅':'游泳课 ❌')},
     {k:'homework',e:'📝',t:'完成学校作业'},
     {k:'study',e:'📖',t:'新概念学习'},
     {k:'outdoor',e:'⭐',t:'行为习惯达标'}
@@ -1341,8 +1341,8 @@ function showHistoryDetail(dateStr){
   if(hist.habits){
     const habitLabels=[
       {k:'fast',e:'⚡',t:'做事快速不拖拉'},
-      {k:'tidy',e:'🥛',t:'吃完钙片和维生素D'},
-      {k:'polite',e:'💝',t:'有礼貌、好态度'}
+      {k:'tidy',e:'💊',t:'按时吃维生素D'},
+      {k:'polite',e:'🌙',t:'晚上10点前上床睡觉'}
     ];
     habitLabels.forEach(hl=>{
       const done=hist.habits[hl.k];
@@ -1401,7 +1401,7 @@ function backfillDate(dateStr){
     </div>
     ${isJ?`<div style="margin-left:32px;margin-bottom:8px">
       <label style="font-size:12px;color:var(--t3)">跳绳个数：</label>
-      <input type="number" id="bf_jumpCount" value="1000" min="0" max="10000" style="width:80px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);font-size:13px"/>
+      <input type="number" id="bf_jumpCount" value="1500" min="0" max="10000" style="width:80px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);font-size:13px"/>
     </div>`:''}
     <div class="backfill-item" onclick="toggleBackfill(this,'homework')">
       <span class="bf-cb" id="bf_homework">⬜</span>
@@ -1422,11 +1422,11 @@ function backfillDate(dateStr){
     </div>
     <div class="backfill-item" onclick="toggleBackfill(this,'tidy')">
       <span class="bf-cb" id="bf_tidy">⬜</span>
-      <span>🥛 吃完钙片和维生素D</span>
+      <span>💊 按时吃维生素D</span>
     </div>
     <div class="backfill-item" onclick="toggleBackfill(this,'polite')">
       <span class="bf-cb" id="bf_polite">⬜</span>
-      <span>💝 有礼貌、好态度</span>
+      <span>🌙 晚上10点前上床睡觉</span>
     </div>
     <div style="display:flex;gap:8px;margin-top:16px">
       <button class="btn" style="flex:1;background:linear-gradient(135deg,var(--ok),var(--ok2));color:white;border:none;padding:10px;border-radius:12px;font-size:14px;cursor:pointer" onclick="submitBackfill('${dateStr}')">✅ 确认补录</button>
@@ -1464,7 +1464,7 @@ function submitBackfill(dateStr){
   const dw=d.getDay();
   const isJ=JUMP.includes(dw);
   const jumpInput=document.getElementById('bf_jumpCount');
-  const jumpCount=isJ?(jumpInput?parseInt(jumpInput.value)||0:1000):0;
+  const jumpCount=isJ?(jumpInput?parseInt(jumpInput.value)||0:1500):0;
   
   const tasks={
     sport:_bfState.sport,
@@ -1528,12 +1528,12 @@ function renderSport(){
   const dw=new Date().getDay(),isJ=JUMP.includes(dw),isS=SWIM.includes(dw);
   let h='';
   if(isJ){
-    const pct=Math.min(100,(G.jumpCount/1000)*100),done=G.jumpCount>=1000;
+    const pct=Math.min(100,(G.jumpCount/1500)*100),done=G.jumpCount>=1500;
     h=`<div class="sport-card jc">
       <div class="sport-head"><div class="sport-icon">🏃‍♀️</div>
-        <div class="sport-info"><h3>今日跳绳日 🎯</h3><p>目标：跳满 1000 个</p></div></div>
+        <div class="sport-info"><h3>今日跳绳日 🎯</h3><p>目标：跳满 1500 个</p></div></div>
       <div class="progress-bg"><div class="progress-fill" style="width:${pct}%"></div></div>
-      <div class="progress-txt"><span>已跳 ${G.jumpCount} 个</span><span>${done?'✅ 已完成！':'还差 '+(1000-G.jumpCount)+' 个'}</span></div>
+      <div class="progress-txt"><span>已跳 ${G.jumpCount} 个</span><span>${done?'✅ 已完成！':'还差 '+(1500-G.jumpCount)+' 个'}</span></div>
       ${!done?`<div class="jump-counter">
         <button class="cnt-btn mi" onclick="addJump(-50)">-50</button>
         <input type="number" id="jumpIn" value="100" min="1" max="500"/>
@@ -1578,10 +1578,10 @@ function renderTasks(){
   const l=document.getElementById('tasksList');
   const dw=new Date().getDay(),isJ=JUMP.includes(dw);
   const tasks=[
-    {k:'sport',e:isJ?'🏃‍♀️':'🏊‍♀️',t:isJ?`跳绳 ${G.jumpCount}/1000`:'完成游泳课',d:isJ?'今天是跳绳日！加油！':'今天是游泳日！加油！',g:isJ?'🧡':'💙'},
+    {k:'sport',e:isJ?'🏃‍♀️':'🏊‍♀️',t:isJ?`跳绳 ${G.jumpCount}/1500`:'完成游泳课',d:isJ?'今天是跳绳日！加油！':'今天是游泳日！加油！',g:isJ?'🧡':'💙'},
     {k:'homework',e:'📝',t:'认真高效完成学校作业',d:'专注写作业，不拖拉不磨蹭',g:'💜'},
     {k:'study',e:'📖',t:'认真学习英语',d:'专注高效，认真完成学习任务',g:'💛'},
-    {k:'outdoor',e:'⭐',t:'今日行为习惯达标',d:'做事快速、自律、有礼貌',g:'💚'}
+    {k:'outdoor',e:'⭐',t:'今日行为习惯达标',d:'做事快速、吃维生素D、早睡',g:'💚'}
   ];
   l.innerHTML=tasks.map(t=>{
     const done=G.tasks[t.k];
@@ -1614,10 +1614,10 @@ function renderStoryProg(){
 function addJump(n){
   if(G.tasks.sport)return;
   G.jumpCount=Math.max(0,G.jumpCount+n);
-  if(G.jumpCount>=1000){G.jumpCount=1000;G.tasks.sport=true;G.consJump++;gemAnim('🧡');checkJumpHero()}
+  if(G.jumpCount>=1500){G.jumpCount=1500;G.tasks.sport=true;G.consJump++;gemAnim('🧡');checkJumpHero()}
   renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();save();
 }
-function completeJump(){G.jumpCount=1000;G.tasks.sport=true;G.consJump++;gemAnim('🧡');renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();checkJumpHero();save()}
+function completeJump(){G.jumpCount=1500;G.tasks.sport=true;G.consJump++;gemAnim('🧡');renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();checkJumpHero();save()}
 function completeSwim(){
   if(G.swimDone)return;G.swimDone=true;G.tasks.sport=true;G.weekSwim++;
   gemAnim('💙');renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();checkWaterSpirit();save();
@@ -2101,8 +2101,8 @@ function renderHabits(){
   if(!l)return;
   const habits=[
     {k:'fast',e:'⚡',t:'做事快速不拖拉',d:'行动力满满，说做就做！'},
-    {k:'tidy',e:'🥛',t:'吃完钙片和维生素D',d:'每天按时吃钙片和维生素D，长高高！'},
-    {k:'polite',e:'💝',t:'有礼貌、好态度',d:'对人友善，积极乐观，不发脾气'}
+    {k:'tidy',e:'💊',t:'按时吃维生素D',d:'每天按时吃维生素D，长高高！'},
+    {k:'polite',e:'🌙',t:'晚上10点前上床睡觉',d:'早睡早起，养成好的作息习惯！'}
   ];
   l.innerHTML=habits.map(h=>{
     const done=G.habits[h.k];
@@ -2121,7 +2121,7 @@ function toggleHabit(k){
     G.tasks.outdoor=true;
     gemAnim('💚');
     renderGems();renderTasks();renderStoryProg();
-    setTimeout(()=>showAchModal('🌟 好习惯之星！',{text:'🎉 太棒了！\n\n你今天的行为习惯全部达标！\n\n做事快速不拖拉 ⚡\n吃完钙片和维生素D 🥛\n有礼貌好态度 💝\n\n你就是最闪亮的好习惯之星！继续保持哦！✨'}),600);
+    setTimeout(()=>showAchModal('🌟 好习惯之星！',{text:'🎉 太棒了！\n\n你今天的行为习惯全部达标！\n\n做事快速不拖拉 ⚡\n按时吃维生素D 💊\n10点前上床睡觉 🌙\n\n你就是最闪亮的好习惯之星！继续保持哦！✨'}),600);
     renderAch();
   } else if(allDone){
     G.tasks.outdoor=true;
