@@ -1,6 +1,6 @@
 // ==========================================
 // 🎮 故事收集家 - 游戏核心引擎（智能多设备同步版）
-// v10.0 — 按周打卡 + 勋章系统 + 故事大扩充
+// v11.0 — 勋章兑换礼物 + 惊喜转盘
 // ==========================================
 
 // ===== 云同步配置 =====
@@ -27,6 +27,18 @@ const JUMP=[1,2,4,6,0], SWIM=[3,5];
 function mondayDow(d){ const dow=(typeof d==='number')?d:d.getDay(); return (dow+6)%7; }
 
 // 故事数据已移至 stories.js（STORIES 全局变量）
+
+// ===== 【v11.0】惊喜转盘特权列表 =====
+const SPIN_PRIZES = [
+  { icon:'🎬', text:'和爸爸妈妈一起看电影', type:'亲子' },
+  { icon:'🍰', text:'选一个喜欢的甜点', type:'生活' },
+  { icon:'🌾', text:'玩5分钟开心农场', type:'生活' },
+  { icon:'🍽️', text:'选择一顿晚餐菜单', type:'生活' },
+  { icon:'🃏', text:'和爸妈玩一局桌游', type:'亲子' },
+  { icon:'🏖️', text:'周末选一个出游地点', type:'亲子' },
+  { icon:'🌟', text:'免除一天的额外练习', type:'学习' },
+  { icon:'🧚', text:'玩15分钟小仙女游戏', type:'生活' },
+];
 
 // ===== 【v10.0】勋章预设列表（按获得顺序依次发放） =====
 const MEDAL_LIST = [
@@ -68,8 +80,10 @@ function makeDefaultState(){
     dirCycleCount:0,
     history:{},
     // 【v10.0 新增】
-    medals:[],           // 源数据：已获得的勋章列表 [{ weekId, title, icon, desc, earnedDate }]
+    medals:[],           // 源数据：已获得的勋章列表 [{ weekId, title, icon, desc, earnedDate, redeemed, redeemedDate }]
     weeklyFullDays:0,    // 派生数据：本周全部完成（allDone）的天数（0-7），用于宝箱进度
+    // 【v11.0 新增】
+    spinHistory:[],      // 源数据：惊喜转盘抽奖记录 [{ triggerMedalIndex, result, date, used }]
   };
 }
 
@@ -113,7 +127,7 @@ function save(){
   }
 
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v10'};
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11'};
   localStorage.setItem(key,JSON.stringify(data));
   console.log('[save] 已保存, history keys=',Object.keys(G.history).length,', weekly keys=',Object.keys(G.weekly).length);
   // 异步同步到云端（每次保存都同步）
@@ -158,6 +172,8 @@ function load(){
       if(d.history&&typeof d.history==='object') G.history={...d.history};
       // 【v10.0】加载勋章数据
       if(Array.isArray(d.medals)) G.medals=[...d.medals];
+      // 【v11.0】加载转盘记录
+      if(Array.isArray(d.spinHistory)) G.spinHistory=[...d.spinHistory];
       
       console.log('[load] 原始数据加载完成, date=',G.date);
       console.log('[load] history keys=',Object.keys(G.history));
@@ -316,6 +332,13 @@ function repairData(){
   
   // 【v10.0】修复 medals 迁移（旧数据没有 medals 字段）
   if(!Array.isArray(G.medals)) G.medals=[];
+  // 【v11.0】修复 spinHistory 迁移
+  if(!Array.isArray(G.spinHistory)) G.spinHistory=[];
+  // 【v11.0】修复旧勋章缺少 redeemed 字段
+  G.medals.forEach(m=>{
+    if(m.redeemed===undefined) m.redeemed=false;
+    if(m.redeemedDate===undefined) m.redeemedDate=null;
+  });
   
   // 第二步：重新统计 totalDays（【v8.7】支持故事导演权解锁后重新计算）
   // 如果已经解锁过故事导演权，则只计算解锁那天之后的打卡天数
@@ -654,6 +677,8 @@ async function cloudLoad(){
           if(data.history&&typeof data.history==='object') G.history={...data.history};
           // 【v10.0】恢复勋章数据
           if(Array.isArray(data.medals)) G.medals=[...data.medals];
+          // 【v11.0】恢复转盘记录
+          if(Array.isArray(data.spinHistory)) G.spinHistory=[...data.spinHistory];
           
           // 恢复后执行跨天处理
           const today=new Date().toDateString();
@@ -766,6 +791,25 @@ async function cloudLoad(){
                 G.medals.push(m);
                 changed=true;
                 console.log('[cloudLoad] 合并勋章:',m.weekId,m.title);
+              } else if(m.weekId&&existingWeekIds.has(m.weekId)){
+                // 【v11.0】合并 redeemed 状态（只向上合并 true）
+                const localMedal=G.medals.find(lm=>lm.weekId===m.weekId);
+                if(localMedal&&m.redeemed&&!localMedal.redeemed){
+                  localMedal.redeemed=true;
+                  localMedal.redeemedDate=m.redeemedDate;
+                  changed=true;
+                }
+              }
+            });
+          }
+          // 【v11.0】合并转盘记录（按 triggerMedalIndex 去重）
+          if(Array.isArray(data.spinHistory)){
+            const existingSpins=new Set(G.spinHistory.map(s=>s.triggerMedalIndex));
+            data.spinHistory.forEach(s=>{
+              if(!existingSpins.has(s.triggerMedalIndex)){
+                G.spinHistory.push(s);
+                changed=true;
+                console.log('[cloudLoad] 合并转盘记录:',s.triggerMedalIndex,s.result);
               }
             });
           }
@@ -798,7 +842,7 @@ async function cloudLoad(){
       isFirstLoad=false;
       // 只保存到本地，不触发 cloudSave，避免空数据覆盖云端
       const key=SYNC_STORAGE_PREFIX+currentUser;
-      const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v10'};
+      const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11'};
       localStorage.setItem(key,JSON.stringify(data));
       console.log('[cloudLoad] 首次加载云端失败，仅保存到本地（不覆盖云端）');
     }
@@ -839,7 +883,7 @@ async function manualSync(){
     
     // 合并完成后再上传合并后的数据到云端
     console.log('[manualSync] 第二步：上传合并后的数据到云端...');
-    const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v10'};
+    const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11'};
     const saveOk=await cloudSave(data);
     
     if(saveOk){
@@ -938,7 +982,7 @@ async function doLogin(){
     if(!currentUser)return;
     try{
       await cloudLoad();
-      await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v10'});
+      await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11'});
     }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
   },30000);
 }
@@ -1806,7 +1850,9 @@ function checkWeeklyMedal(){
     icon:medalDef.icon,
     title:medalIdx>=MEDAL_LIST.length?medalDef.title+' #'+(medalIdx-MEDAL_LIST.length+2):medalDef.title,
     desc:medalDef.desc,
-    earnedDate:today.toDateString()
+    earnedDate:today.toDateString(),
+    redeemed:false,        // 【v11.0】是否已兑换礼物
+    redeemedDate:null      // 【v11.0】兑换日期
   };
   
   G.medals.push(newMedal);
@@ -1814,7 +1860,7 @@ function checkWeeklyMedal(){
   
   // 保存（不再递归调用 save，直接本地保存）
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v10'};
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11'};
   localStorage.setItem(key,JSON.stringify(data));
   cloudSave(data);
   
@@ -1823,10 +1869,12 @@ function checkWeeklyMedal(){
     bigConfetti();
     showMedalModal(newMedal);
     renderMedals();
+    // 【v11.0】检查是否触发惊喜转盘
+    setTimeout(()=>checkSpinWheel(),2000);
   },500);
 }
 
-// 显示勋章获得弹窗
+// 显示勋章获得弹窗（新获得时）
 function showMedalModal(medal){
   document.getElementById('mAchTitle').textContent='🏅 恭喜获得新勋章！';
   document.getElementById('mAchBody').innerHTML=`
@@ -1863,17 +1911,18 @@ function renderMedals(){
   G.medals.forEach((m,idx)=>{
     const earnedDate=new Date(m.earnedDate);
     const dateStr=`${earnedDate.getMonth()+1}/${earnedDate.getDate()}`;
-    html+=`<div class="medal-item earned" onclick="showMedalDetail(${idx})">
+    const redeemed=m.redeemed;
+    html+=`<div class="medal-item earned ${redeemed?'redeemed':''}" onclick="showMedalDetail(${idx})">
       <div class="medal-icon">${m.icon}</div>
       <div class="medal-title">${m.title}</div>
       <div class="medal-date">${dateStr}</div>
+      ${redeemed?'<div class="medal-redeemed-tag">✅ 已兑换</div>':'<div class="medal-gift-tag">🎁</div>'}
     </div>`;
   });
   
   // 显示下一枚待解锁的勋章（灰色锁定）
   const nextIdx=G.medals.length;
   if(nextIdx<MEDAL_LIST.length){
-    const nextMedal=MEDAL_LIST[nextIdx];
     html+=`<div class="medal-item locked">
       <div class="medal-icon">🔒</div>
       <div class="medal-title">第${nextIdx+1}周</div>
@@ -1882,13 +1931,267 @@ function renderMedals(){
   }
   
   grid.innerHTML=html;
+  
+  // 【v11.0】渲染惊喜转盘入口和转盘历史
+  renderSpinSection();
 }
 
-// 显示已获得勋章的详情
+// 显示已获得勋章的详情（带兑换按钮）
 function showMedalDetail(idx){
   if(!G.medals||!G.medals[idx])return;
   const medal=G.medals[idx];
-  showMedalModal(medal);
+  const earnedDate=new Date(medal.earnedDate);
+  
+  let redeemHtml='';
+  if(medal.redeemed){
+    const rDate=new Date(medal.redeemedDate);
+    redeemHtml=`<div style="margin-top:16px;padding:14px;background:rgba(52,211,153,0.1);border-radius:14px;border:1px solid rgba(52,211,153,0.3)">
+      <p style="color:#10B981;font-size:16px;font-weight:700">✅ 礼物已兑换</p>
+      <p style="color:var(--t3);font-size:13px;margin-top:4px">兑换日期：${rDate.getMonth()+1}月${rDate.getDate()}日</p>
+    </div>`;
+  } else {
+    redeemHtml=`<button class="medal-redeem-btn" onclick="confirmRedeemMedal(${idx})">🎁 兑换礼物</button>
+    <p style="color:var(--t3);font-size:12px;margin-top:8px">兑换后找爸爸妈妈领取礼物哦～</p>`;
+  }
+  
+  document.getElementById('mAchTitle').textContent='🏅 勋章详情';
+  document.getElementById('mAchBody').innerHTML=`
+    <div style="text-align:center;padding:16px 0">
+      <div style="font-size:72px;margin-bottom:12px;animation:cf 2s ease-in-out infinite">${medal.icon}</div>
+      <h3 style="font-size:22px;background:linear-gradient(135deg,#FFD700,#FB923C);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:6px">${medal.title}</h3>
+      <p style="font-size:15px;color:var(--t2);line-height:1.8;margin-bottom:8px">${medal.desc}</p>
+      <div style="font-size:13px;color:var(--t3);padding:8px;background:rgba(255,215,0,0.08);border-radius:10px">
+        📅 获得日期：${earnedDate.getMonth()+1}月${earnedDate.getDate()}日 · 第 ${idx+1} 枚勋章
+      </div>
+      ${redeemHtml}
+    </div>`;
+  document.getElementById('achieveModal').classList.add('show');
+}
+
+// 【v11.0】确认兑换礼物
+function confirmRedeemMedal(idx){
+  if(!G.medals||!G.medals[idx]||G.medals[idx].redeemed) return;
+  
+  const medal=G.medals[idx];
+  document.getElementById('mAchTitle').textContent='🎁 确认兑换礼物';
+  document.getElementById('mAchBody').innerHTML=`
+    <div style="text-align:center;padding:20px 0">
+      <div style="font-size:64px;margin-bottom:12px">${medal.icon}</div>
+      <h3 style="font-size:20px;color:var(--t1);margin-bottom:8px">${medal.title}</h3>
+      <p style="font-size:16px;color:var(--t2);line-height:1.8;margin-bottom:20px">确定要兑换这枚勋章的礼物吗？<br><span style="color:var(--t3);font-size:13px">兑换后不能再次兑换哦～</span></p>
+      <div style="display:flex;gap:12px;justify-content:center">
+        <button onclick="closeModal('achieveModal')" style="flex:1;max-width:140px;padding:14px;border:2px solid var(--border);border-radius:16px;background:var(--card);color:var(--t2);font-size:16px;font-family:inherit;cursor:pointer;font-weight:600">❌ 先不兑换</button>
+        <button onclick="executeRedeemMedal(${idx})" style="flex:1;max-width:140px;padding:14px;border:none;border-radius:16px;background:linear-gradient(135deg,#FF6FB7,#A855F7);color:#fff;font-size:16px;font-family:inherit;cursor:pointer;font-weight:700;box-shadow:0 4px 15px rgba(168,85,247,0.4)">✅ 确认兑换</button>
+      </div>
+    </div>`;
+}
+
+// 【v11.0】执行兑换
+function executeRedeemMedal(idx){
+  if(!G.medals||!G.medals[idx]||G.medals[idx].redeemed) return;
+  
+  G.medals[idx].redeemed=true;
+  G.medals[idx].redeemedDate=new Date().toDateString();
+  save();
+  
+  // 兑换成功弹窗
+  const medal=G.medals[idx];
+  document.getElementById('mAchTitle').textContent='🎉 兑换成功！';
+  document.getElementById('mAchBody').innerHTML=`
+    <div style="text-align:center;padding:20px 0">
+      <div style="font-size:72px;margin-bottom:12px">🎁</div>
+      <h3 style="font-size:22px;color:var(--t1);margin-bottom:8px">恭喜你兑换了礼物！</h3>
+      <p style="font-size:16px;color:var(--t2);line-height:1.8;margin-bottom:16px">${medal.icon} ${medal.title} 的礼物</p>
+      <div style="padding:14px;background:linear-gradient(135deg,rgba(255,111,183,0.1),rgba(168,85,247,0.1));border-radius:14px;border:1px solid rgba(168,85,247,0.2)">
+        <p style="color:var(--t1);font-size:15px">🎀 记得找爸爸妈妈领取礼物哦～</p>
+      </div>
+    </div>`;
+  
+  bigConfetti();
+  renderMedals();
+  console.log('[兑换] 勋章礼物已兑换:',medal.title);
+}
+
+// ===== 【v11.0】惊喜转盘系统 =====
+
+// 检查是否应该触发惊喜转盘（连续3枚勋章）
+function checkSpinWheel(){
+  if(!G.medals||G.medals.length<3) return;
+  if(!G.spinHistory) G.spinHistory=[];
+  
+  // 检查最近3枚勋章是否是连续周
+  const totalMedals=G.medals.length;
+  
+  // 每 3 枚勋章触发一次：第3枚、第6枚、第9枚...
+  // 检查是否刚好到达3的倍数
+  if(totalMedals%3!==0) return;
+  
+  // 检查这次的3枚是否已经触发过转盘
+  const triggerIdx=totalMedals; // 用总数作为标识
+  if(G.spinHistory.some(s=>s.triggerMedalIndex===triggerIdx)) return;
+  
+  // 检查最近3枚勋章是否是连续的周
+  const last3=G.medals.slice(-3);
+  let isConsecutive=true;
+  for(let i=1;i<3;i++){
+    const prevWeekId=last3[i-1].weekId;
+    const currWeekId=last3[i].weekId;
+    // 解析 weekId 格式 YYYY-WNN
+    const prevParts=prevWeekId.match(/(\d+)-W(\d+)/);
+    const currParts=currWeekId.match(/(\d+)-W(\d+)/);
+    if(!prevParts||!currParts){isConsecutive=false;break;}
+    const prevY=parseInt(prevParts[1]),prevW=parseInt(prevParts[2]);
+    const currY=parseInt(currParts[1]),currW=parseInt(currParts[2]);
+    // 简单判断：同年相邻周 或 跨年（52/53→1）
+    if(currY===prevY && currW===prevW+1) continue;
+    if(currY===prevY+1 && currW===1 && (prevW>=51)) continue;
+    isConsecutive=false;break;
+  }
+  
+  if(!isConsecutive) return;
+  
+  // 触发惊喜转盘！
+  console.log('[转盘] 连续3周满勤！触发惊喜转盘！');
+  showSpinWheel(triggerIdx);
+}
+
+// 显示转盘弹窗
+function showSpinWheel(triggerIdx){
+  document.getElementById('mAchTitle').textContent='🎉 连续3周满勤！';
+  
+  let prizeItemsHtml='';
+  SPIN_PRIZES.forEach((p,i)=>{
+    prizeItemsHtml+=`<div class="spin-prize-item" style="--prize-idx:${i}">${p.icon}</div>`;
+  });
+  
+  document.getElementById('mAchBody').innerHTML=`
+    <div style="text-align:center;padding:10px 0">
+      <p style="font-size:17px;color:var(--t1);margin-bottom:16px;line-height:1.6">太棒了！连续三周全勤！<br>🎡 解锁惊喜转盘！</p>
+      <div class="spin-wheel-container" id="spinWheelContainer">
+        <div class="spin-wheel" id="spinWheel">
+          ${SPIN_PRIZES.map((p,i)=>{
+            const angle=(360/8)*i;
+            return `<div class="spin-sector" style="transform:rotate(${angle}deg)">
+              <div class="spin-sector-content" style="transform:rotate(${45/2}deg)">
+                <span class="spin-sector-icon">${p.icon}</span>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div class="spin-pointer">▼</div>
+      </div>
+      <button class="spin-btn" id="spinBtn" onclick="startSpin(${triggerIdx})">🎰 开始转动！</button>
+    </div>`;
+  document.getElementById('achieveModal').classList.add('show');
+}
+
+// 开始转盘旋转
+function startSpin(triggerIdx){
+  const btn=document.getElementById('spinBtn');
+  if(!btn) return;
+  btn.disabled=true;
+  btn.textContent='🎡 转动中...';
+  
+  // 随机选中一个奖品
+  const prizeIdx=Math.floor(Math.random()*SPIN_PRIZES.length);
+  const prize=SPIN_PRIZES[prizeIdx];
+  
+  // 计算旋转角度：基础圈数 + 目标位置
+  const baseRotation=360*5; // 转5圈
+  const targetAngle=360-(360/8)*prizeIdx-(360/16); // 让指针指向目标扇区中心
+  const totalAngle=baseRotation+targetAngle;
+  
+  const wheel=document.getElementById('spinWheel');
+  if(wheel){
+    wheel.style.transition='transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)';
+    wheel.style.transform=`rotate(${totalAngle}deg)`;
+  }
+  
+  // 4秒后显示结果
+  setTimeout(()=>{
+    // 保存记录
+    if(!G.spinHistory) G.spinHistory=[];
+    G.spinHistory.push({
+      triggerMedalIndex:triggerIdx,
+      result:prize.icon+' '+prize.text,
+      date:new Date().toDateString(),
+      used:false
+    });
+    save();
+    
+    // 显示结果
+    showSpinResult(prize);
+    renderMedals();
+  },4200);
+}
+
+// 显示转盘结果
+function showSpinResult(prize){
+  bigConfetti();
+  document.getElementById('mAchTitle').textContent='🎊 恭喜抽中！';
+  document.getElementById('mAchBody').innerHTML=`
+    <div style="text-align:center;padding:20px 0">
+      <div style="font-size:80px;margin-bottom:16px;animation:cf 2s ease-in-out infinite">${prize.icon}</div>
+      <h3 style="font-size:22px;color:var(--t1);margin-bottom:8px">${prize.text}</h3>
+      <div style="padding:14px;margin-top:16px;background:linear-gradient(135deg,rgba(255,111,183,0.1),rgba(168,85,247,0.1));border-radius:14px;border:1px solid rgba(168,85,247,0.2)">
+        <p style="color:var(--t2);font-size:15px">🎀 记得找爸爸妈妈兑换哦～</p>
+        <p style="color:var(--t3);font-size:12px;margin-top:4px">类型：${prize.type}</p>
+      </div>
+      <button onclick="closeModal('achieveModal')" style="margin-top:20px;padding:14px 40px;border:none;border-radius:16px;background:linear-gradient(135deg,#FF6FB7,#A855F7);color:#fff;font-size:17px;font-family:inherit;font-weight:700;cursor:pointer;box-shadow:0 4px 15px rgba(168,85,247,0.4)">✨ 太开心了！</button>
+    </div>`;
+}
+
+// 渲染惊喜转盘区域（在勋章墙下方）
+function renderSpinSection(){
+  let spinSection=document.getElementById('spinHistorySection');
+  if(!spinSection){
+    // 创建区域
+    const medalCard=document.querySelector('.medal-wall-card');
+    if(!medalCard) return;
+    spinSection=document.createElement('div');
+    spinSection.id='spinHistorySection';
+    spinSection.className='spin-history-section';
+    medalCard.appendChild(spinSection);
+  }
+  
+  if(!G.spinHistory||G.spinHistory.length===0){
+    // 显示转盘提示
+    const nextSpinAt=G.medals?Math.ceil(G.medals.length/3)*3:3;
+    const remaining=nextSpinAt-((G.medals&&G.medals.length)||0);
+    if(remaining>0){
+      spinSection.innerHTML=`<div class="spin-hint">
+        <span style="font-size:28px">🎡</span>
+        <p>连续获得3枚勋章可解锁<b>惊喜转盘</b>！</p>
+        <p style="font-size:12px;color:var(--t3)">还差 ${remaining} 枚勋章</p>
+      </div>`;
+    } else {
+      spinSection.innerHTML='';
+    }
+    return;
+  }
+  
+  // 有转盘历史，显示记录
+  let histHtml='<h4 style="font-size:15px;color:var(--t1);margin:16px 0 10px">🎡 惊喜转盘记录</h4>';
+  G.spinHistory.forEach(s=>{
+    const d=new Date(s.date);
+    const dateStr=`${d.getMonth()+1}/${d.getDate()}`;
+    histHtml+=`<div class="spin-history-item">
+      <span class="spin-history-result">${s.result}</span>
+      <span class="spin-history-date">${dateStr}</span>
+    </div>`;
+  });
+  
+  // 下一次转盘距离
+  const nextSpinAt=Math.ceil((G.medals?G.medals.length:0)/3)*3;
+  const totalMedals=G.medals?G.medals.length:0;
+  if(nextSpinAt>totalMedals){
+    const remaining=nextSpinAt-totalMedals;
+    histHtml+=`<div class="spin-hint" style="margin-top:10px">
+      <p style="font-size:13px;color:var(--t3)">🎡 再获得 ${remaining} 枚勋章解锁下一次转盘</p>
+    </div>`;
+  }
+  
+  spinSection.innerHTML=histHtml;
 }
 
 // ===== 成就 =====
@@ -2229,7 +2532,7 @@ function initGame(){
       // 【v10.0】先拉取云端最新数据合并，再上传（避免覆盖其他设备的新数据）
       try{
         await cloudLoad();
-        await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v10'});
+        await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11'});
       }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
     },30000);
   }else{

@@ -921,3 +921,178 @@ body::before{
 .t-day.future-day{
   opacity:0.3;
 }
+
+/* ============ 【v11.0】勋章兑换标记 ============ */
+.medal-item.redeemed{
+  border-color:rgba(52,211,153,0.4)!important;
+  background:linear-gradient(135deg,rgba(52,211,153,0.1),rgba(16,185,129,0.1))!important;
+}
+.medal-redeemed-tag{
+  position:absolute;
+  top:-4px;right:-4px;
+  font-size:10px;
+  background:linear-gradient(135deg,#34D399,#10B981);
+  color:#fff;
+  padding:2px 6px;
+  border-radius:8px;
+  font-weight:700;
+  box-shadow:0 2px 6px rgba(52,211,153,0.4);
+}
+.medal-gift-tag{
+  position:absolute;
+  top:-4px;right:-4px;
+  font-size:16px;
+  animation:giftPulse 2s ease-in-out infinite;
+}
+@keyframes giftPulse{
+  0%,100%{transform:scale(1);filter:drop-shadow(0 0 4px rgba(255,111,183,0.3))}
+  50%{transform:scale(1.2);filter:drop-shadow(0 0 8px rgba(255,111,183,0.6))}
+}
+
+/* 兑换按钮 */
+.medal-redeem-btn{
+  display:block;
+  width:100%;
+  margin-top:16px;
+  padding:16px;
+  border:none;
+  border-radius:18px;
+  background:linear-gradient(135deg,#FF6FB7,#A855F7,#4A7CF7);
+  color:#fff;
+  font-size:18px;
+  font-family:inherit;
+  font-weight:700;
+  cursor:pointer;
+  box-shadow:0 6px 20px rgba(168,85,247,0.4);
+  transition:.3s;
+  text-shadow:0 1px 2px rgba(0,0,0,0.1);
+}
+.medal-redeem-btn:hover{
+  transform:translateY(-2px);
+  box-shadow:0 8px 25px rgba(168,85,247,0.5);
+}
+.medal-redeem-btn:active{
+  transform:scale(0.97);
+}
+
+/* ============ 【v11.0】惊喜转盘 ============ */
+.spin-wheel-container{
+  position:relative;
+  width:240px;
+  height:240px;
+  margin:0 auto 20px;
+}
+.spin-wheel{
+  width:240px;
+  height:240px;
+  border-radius:50%;
+  background:conic-gradient(
+    #FFE4EC 0deg 45deg,
+    #E8D5F8 45deg 90deg,
+    #D5E5FF 90deg 135deg,
+    #E0F7FF 135deg 180deg,
+    #FFE4EC 180deg 225deg,
+    #FFF3D5 225deg 270deg,
+    #E8FFE4 270deg 315deg,
+    #F8E4FF 315deg 360deg
+  );
+  border:4px solid rgba(255,215,0,0.6);
+  box-shadow:0 0 30px rgba(255,215,0,0.3),inset 0 0 20px rgba(255,255,255,0.5);
+  position:relative;
+  transition:transform 0s;
+}
+.spin-sector{
+  position:absolute;
+  width:50%;
+  height:50%;
+  top:0;left:50%;
+  transform-origin:0% 100%;
+}
+.spin-sector-content{
+  position:absolute;
+  width:100%;height:100%;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+  padding-top:20px;
+}
+.spin-sector-icon{
+  font-size:28px;
+  filter:drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+}
+.spin-pointer{
+  position:absolute;
+  top:-16px;
+  left:50%;
+  transform:translateX(-50%);
+  font-size:28px;
+  color:#FF6FB7;
+  filter:drop-shadow(0 2px 6px rgba(255,111,183,0.5));
+  z-index:10;
+  animation:pointerBounce 1s ease-in-out infinite;
+}
+@keyframes pointerBounce{
+  0%,100%{transform:translateX(-50%) translateY(0)}
+  50%{transform:translateX(-50%) translateY(4px)}
+}
+.spin-btn{
+  padding:16px 40px;
+  border:none;
+  border-radius:20px;
+  background:linear-gradient(135deg,#FFD700,#FB923C);
+  color:#5A2D0C;
+  font-size:20px;
+  font-family:inherit;
+  font-weight:700;
+  cursor:pointer;
+  box-shadow:0 6px 20px rgba(255,215,0,0.4);
+  transition:.3s;
+}
+.spin-btn:hover{
+  transform:translateY(-2px);
+  box-shadow:0 8px 25px rgba(255,215,0,0.5);
+}
+.spin-btn:active{
+  transform:scale(0.95);
+}
+.spin-btn:disabled{
+  opacity:0.6;
+  cursor:not-allowed;
+  transform:none;
+}
+
+/* 转盘历史记录 */
+.spin-history-section{
+  margin-top:16px;
+  padding-top:12px;
+  border-top:1px solid rgba(255,215,0,0.2);
+}
+.spin-history-item{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:10px 14px;
+  background:rgba(255,255,255,0.4);
+  border-radius:12px;
+  margin-bottom:6px;
+  border:1px solid rgba(255,215,0,0.15);
+}
+.spin-history-result{
+  font-size:14px;
+  color:var(--t1);
+  font-weight:600;
+}
+.spin-history-date{
+  font-size:12px;
+  color:var(--t3);
+}
+.spin-hint{
+  text-align:center;
+  padding:12px;
+  color:var(--t2);
+  font-size:14px;
+  line-height:1.6;
+}
+.spin-hint b{
+  color:var(--gold);
+}
