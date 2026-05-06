@@ -75,6 +75,7 @@ function saveGitHubToken() {
 function loadGitHubToken() {
   const input = document.getElementById('githubTokenInput');
   const statusEl = document.getElementById('tokenStatus');
+  const syncDetailStatus = document.getElementById('syncDetailStatus');
   if (!input) return;
   
   const token = getGitHubToken();
@@ -85,6 +86,10 @@ function loadGitHubToken() {
       statusEl.style.color = '#10B981';
       statusEl.textContent = '✅ Token 已配置';
     }
+    // 更新同步详情状态
+    if (syncDetailStatus) {
+      syncDetailStatus.textContent = '✅ Token 已配置，可以手动同步或等待自动同步';
+    }
     // 隐藏离线提示
     const offlineTip = document.getElementById('offlineTip');
     if (offlineTip) offlineTip.style.display = 'none';
@@ -93,6 +98,10 @@ function loadGitHubToken() {
     if (statusEl) {
       statusEl.style.color = '#F59E0B';
       statusEl.textContent = '⚠️ 请先配置 GitHub Token';
+    }
+    // 更新同步详情状态
+    if (syncDetailStatus) {
+      syncDetailStatus.textContent = '⚠️ 请先配置 GitHub Token 以启用云端同步';
     }
     // 显示离线提示
     const offlineTip = document.getElementById('offlineTip');
@@ -1184,11 +1193,13 @@ function updateSyncUI(status){
   const loginSync=document.getElementById('syncStatus');
   const syncInfo=document.getElementById('syncInfo');
   const offlineTip=document.getElementById('offlineTip');
+  const syncDetailStatus=document.getElementById('syncDetailStatus');
   
   if(status==='syncing'){
     if(dot)dot.textContent='🔄';
     if(loginSync)loginSync.textContent='🔄 正在同步...';
     if(syncInfo)syncInfo.textContent='☁️ 正在同步...';
+    if(syncDetailStatus)syncDetailStatus.textContent='🔄 正在同步云端数据...';
     // 隐藏离线提示
     if(offlineTip) offlineTip.style.display='none';
   }else if(status==='done'){
@@ -1196,12 +1207,14 @@ function updateSyncUI(status){
     const timeStr=new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
     if(loginSync)loginSync.textContent='✅ 云端已同步';
     if(syncInfo)syncInfo.textContent='☁️ 已同步 ('+timeStr+')';
+    if(syncDetailStatus)syncDetailStatus.textContent='✅ 云端同步正常（最后同步：'+timeStr+'）';
     // 隐藏离线提示
     if(offlineTip) offlineTip.style.display='none';
   }else{
     if(dot)dot.textContent='📴';
     if(loginSync)loginSync.textContent='📴 离线模式（数据存在本地）';
     if(syncInfo)syncInfo.textContent='📴 离线模式';
+    if(syncDetailStatus)syncDetailStatus.textContent='⚠️ 离线模式（请先配置 GitHub Token）';
     // 【v11.3 新增】显示离线提示
     if(offlineTip) offlineTip.style.display='block';
   }
