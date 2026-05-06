@@ -1006,9 +1006,17 @@ async function cloudSave(data){
     console.error('[cloudSave] ❌ 云端同步失败:', e.message);
     
     // Token 无效时提示用户重新配置
-    if (e.message.includes('401') || e.message.includes('403')) {
+    if (e.message.includes('401')) {
       showToast('⚠️ GitHub Token 无效或已过期，请在设置中重新配置');
-      clearGitHubToken(); // 清除无效 Token
+      clearGitHubToken(); // 401 才是 Token 无效，需要清除
+    } else if (e.message.includes('403') && e.message.includes('rate limit')) {
+      // 403 且包含 rate limit 是 API 频率超限，不要清除 Token
+      console.warn('[cloudSave] ⚠️ GitHub API 频率超限，将在下次重试');
+      showToast('⚠️ GitHub API 频率超限，请稍后再试');
+    } else if (e.message.includes('403')) {
+      // 其他 403 错误，可能是 Token 权限不足
+      console.warn('[cloudSave] ⚠️ GitHub API 403 错误:', e.message);
+      showToast('⚠️ GitHub Token 权限不足，请重新生成 Token（需勾选 gist 权限）');
     } else {
       showToast('⚠️ 云端同步失败: ' + e.message.substring(0, 50));
     }
@@ -1277,17 +1285,23 @@ async function cloudLoad(){
       } else {
         console.log('[cloudLoad] 云端数据用户不匹配:', data && data._user, '!==', currentUser);
       }
-    } else {
-      const errText = await resp.text().catch(() => '');
-      console.log('[cloudLoad] HTTP 错误:', resp.status, errText);
-      
-      // Token 无效时清除
-      if (resp.status === 401 || resp.status === 403) {
-        console.error('[cloudLoad] Token 无效，已清除');
-        clearGitHubToken();
-        showToast('⚠️ GitHub Token 无效或已过期，请在设置中重新配置');
+      } else {
+        const errText = await resp.text().catch(() => '');
+        console.log('[cloudLoad] HTTP 错误:', resp.status, errText);
+        
+        // 区分 401 和 403 错误
+        if (resp.status === 401) {
+          console.error('[cloudLoad] Token 无效，已清除');
+          clearGitHubToken();
+          showToast('⚠️ GitHub Token 无效或已过期，请在设置中重新配置');
+        } else if (resp.status === 403 && errText.includes('rate limit')) {
+          // 403 且包含 rate limit 是 API 频率超限，不要清除 Token
+          console.warn('[cloudLoad] ⚠️ GitHub API 频率超限，将在下次重试');
+        } else if (resp.status === 403) {
+          // 其他 403 错误，可能是权限不足
+          console.warn('[cloudLoad] ⚠️ GitHub API 403 错误:', errText);
+        }
       }
-    }
     updateSyncUI('done');
     return false;
   } catch(e) {
@@ -3145,6 +3159,7 @@ function initGame(){
     if(quickStyle)quickStyle.remove();
     
     if(syncTimer)clearInterval(syncTimer);
+    // 【修复】降低同步频率到 5 分钟，避免触发 GitHub API 限制
     syncTimer=setInterval(async ()=>{
       if(!currentUser)return;
       // 【v10.0】先拉取云端最新数据合并，再上传（避免覆盖其他设备的新数据）
@@ -3152,7 +3167,7 @@ function initGame(){
         await cloudLoad();
         await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.3'});
       }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
-    },30000);
+    },300000); // 5 分钟 = 300000 毫秒
   }else{
     // 未登录 —— 显示登录页面
     document.getElementById('loginOverlay').style.display='';
