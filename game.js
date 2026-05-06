@@ -2264,7 +2264,7 @@ function renderStoryProg(){
   for(let i=0;i<total;i++){const d=document.createElement('div');d.className='sp-slot'+(i<done?' on':'');bar.appendChild(d)}
   const btn=document.getElementById('btnUnlock'),tt=document.getElementById('storyTitle'),pv=document.getElementById('storyPreview');
   // 【修复】检查今天是否真的打卡了（history 中有今天的记录且 allDone=true）
-  const todayStr=new Date().toLocaleDateString('zh-CN');
+  const todayStr=new Date().toDateString();
   const todayHistory=G.history&&G.history[todayStr];
   const todayAllDone=todayHistory&&todayHistory.allDone===true;
   const alreadyUnlocked=hasTodayStory() && todayAllDone;
@@ -2360,12 +2360,12 @@ function launchFirework(x,y){
 // ===== 故事解锁 =====
 // 检查今天是否已解锁过故事
 function hasTodayStory(){
-  const todayStr=new Date().toLocaleDateString('zh-CN');
+  const todayStr=new Date().toDateString();
   return G.collected.some(s=>s.date===todayStr);
 }
 // 获取今天已解锁的故事
 function getTodayStory(){
-  const todayStr=new Date().toLocaleDateString('zh-CN');
+  const todayStr=new Date().toDateString();
   return G.collected.find(s=>s.date===todayStr);
 }
 function unlockStory(){
