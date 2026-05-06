@@ -461,8 +461,19 @@ function save(){
   const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.3'};
   localStorage.setItem(key,JSON.stringify(data));
   console.log('[save] 已保存, history keys=',Object.keys(G.history).length,', weekly keys=',Object.keys(G.weekly).length);
-  // 异步同步到云端（每次保存都同步）
-  cloudSave(data);
+  
+  // 【修复】打卡后立即同步到云端（带重试）
+  if (hasGitHubToken()) {
+    cloudSave(data).then(success => {
+      if (success) {
+        console.log('[save] ✅ 云端同步成功');
+      } else {
+        console.warn('[save] ⚠️ 云端同步失败，将依赖自动同步');
+      }
+    }).catch(e => {
+      console.error('[save] ❌ 云端同步异常:', e.message);
+    });
+  }
   
   // 【v10.0】每次保存后检测勋章（异步，不阻塞保存流程）
   checkWeeklyMedal();
