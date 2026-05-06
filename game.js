@@ -260,7 +260,7 @@ function save(){
   // 【v11.1】自动备份到 sessionStorage
   autoBackup();
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11'};
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.2'};
   localStorage.setItem(key,JSON.stringify(data));
   console.log('[save] 已保存, history keys=',Object.keys(G.history).length,', weekly keys=',Object.keys(G.weekly).length);
   // 异步同步到云端（每次保存都同步）
@@ -714,38 +714,53 @@ function getBlobId(user){
     || (function(){ try{ return sessionStorage.getItem('storyGame_blobId_'+user); }catch(e){ return null; } })();
 }
 
+// 【v11.2 修复】云端保存函数 - 修复返回值问题
 async function cloudSave(data){
   try{
     updateSyncUI('syncing');
     const blobId=getBlobId(currentUser);
+    
     if(blobId){
       // 有 blobId，直接更新（带重试）
-      await fetchWithRetry(JSONBLOB_API+'/'+blobId,{
+      console.log('[cloudSave] 开始 PUT 更新, blobId=',blobId);
+      const resp = await fetchWithRetry(JSONBLOB_API+'/'+blobId,{
         method:'PUT',
         headers:{'Content-Type':'application/json','Accept':'application/json'},
         body:JSON.stringify(data)
       },15000,2);
+      
+      if(!resp.ok){
+        throw new Error('PUT 更新失败: ' + resp.status + ' ' + resp.statusText);
+      }
+      
       console.log('[cloudSave] PUT 更新成功, blobId=',blobId);
     }else{
       // 没有 blobId，创建新 blob（带重试）
+      console.log('[cloudSave] 开始 POST 创建新 blob');
       const resp=await fetchWithRetry(JSONBLOB_API,{
         method:'POST',
         headers:{'Content-Type':'application/json','Accept':'application/json'},
         body:JSON.stringify(data)
       },15000,2);
+      
       if(resp.ok){
         const loc=resp.headers.get('Location')||resp.headers.get('location');
         if(loc){
           const newId=loc.split('/').pop();
           saveBlobId(currentUser, newId);
           console.log('[cloudSave] POST 创建成功, newBlobId=',newId);
+        }else{
+          console.warn('[cloudSave] POST 成功但未返回 Location header');
         }
+      }else{
+        throw new Error('POST 创建失败: ' + resp.status + ' ' + resp.statusText);
       }
     }
+    
     updateSyncUI('done');
     return true;
   }catch(e){
-    console.log('[cloudSave] 云端同步失败，使用本地存储',e.message);
+    console.error('[cloudSave] 云端同步失败:',e.message);
     updateSyncUI('offline');
     return false;
   }
@@ -1005,7 +1020,7 @@ async function cloudLoad(){
       isFirstLoad=false;
       // 只保存到本地，不触发 cloudSave，避免空数据覆盖云端
       const key=SYNC_STORAGE_PREFIX+currentUser;
-      const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11'};
+      const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.2'};
       localStorage.setItem(key,JSON.stringify(data));
       console.log('[cloudLoad] 首次加载云端失败，仅保存到本地（不覆盖云端）');
     }
@@ -1033,33 +1048,53 @@ function updateSyncUI(status){
   }
 }
 
-// ===== 手动同步（v8.0：先拉后推，避免覆盖其他设备的新数据） =====
+// ===== 【v11.2 修复】手动同步（添加详细错误日志） =====
 async function manualSync(){
   if(!currentUser){showToast('请先登录');return;}
   const btn=document.getElementById('btnManualSync');
   if(btn){btn.disabled=true;btn.textContent='⏳ 同步中...';}
   
   try{
-    // 【v8.0 关键修复】先从云端拉取最新数据并合并（这样不会覆盖手机的新数据）
-    console.log('[manualSync] 第一步：从云端拉取最新数据...');
-    await cloudLoad();
+    // 步骤1：从云端拉取最新数据
+    console.log('[manualSync] 步骤1/3：开始 cloudLoad()...');
+    try {
+      await cloudLoad();
+      console.log('[manualSync] ✅ 步骤1 完成：cloudLoad 成功');
+    } catch(e) {
+      console.error('[manualSync] ❌ 步骤1 失败：cloudLoad 抛出异常', e.message);
+      throw e; // 重新抛出异常，让外层 catch 处理
+    }
     
-    // 合并完成后再上传合并后的数据到云端
-    console.log('[manualSync] 第二步：上传合并后的数据到云端...');
-    const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11'};
-    const saveOk=await cloudSave(data);
+    // 步骤2：准备数据
+    console.log('[manualSync] 步骤2/3：准备数据...');
+    const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.2'};
+    console.log('[manualSync] 数据大小:', JSON.stringify(data).length, 'bytes');
+    
+    // 步骤3：上传到云端
+    console.log('[manualSync] 步骤3/3：开始 cloudSave()...');
+    let saveOk = false;
+    try {
+      saveOk = await cloudSave(data);
+      console.log('[manualSync] cloudSave 返回结果:', saveOk);
+    } catch(e) {
+      console.error('[manualSync] ❌ 步骤3 失败：cloudSave 抛出异常', e.message);
+      throw e; // 重新抛出异常
+    }
     
     if(saveOk){
       showToast('☁️ 云端同步成功！');
+      console.log('[manualSync] ✅ 同步成功');
     }else{
+      console.error('[manualSync] ❌ cloudSave 返回 false');
       showToast('⚠️ 同步失败，请检查网络后重试');
     }
   }catch(e){
-    console.log('[manualSync] 手动同步失败:',e.message);
+    console.error('[manualSync] ❌ 手动同步失败:', e.message);
+    console.error('[manualSync] 错误堆栈:', e.stack);
     showToast('⚠️ 同步失败: '+e.message);
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='☁️ 手动同步';}
   }
-  
-  if(btn){btn.disabled=false;btn.textContent='☁️ 手动同步';}
 }
 
 
@@ -1238,7 +1273,7 @@ async function doLogin(){
     if(!currentUser)return;
     try{
       await cloudLoad();
-      await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11'});
+      await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.2'});
     }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
   },30000);
 }
@@ -2128,7 +2163,7 @@ function checkWeeklyMedal(){
   
   // 保存（不再递归调用 save，直接本地保存）
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11'};
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.2'};
   localStorage.setItem(key,JSON.stringify(data));
   cloudSave(data);
   
@@ -2823,7 +2858,7 @@ function initGame(){
       // 【v10.0】先拉取云端最新数据合并，再上传（避免覆盖其他设备的新数据）
       try{
         await cloudLoad();
-        await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11'});
+        await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.2'});
       }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
     },30000);
   }else{
