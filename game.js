@@ -2592,8 +2592,19 @@ function initGame(){
       const bd = JSON.parse(backupData);
       if(bd.history && Object.keys(bd.history).length > 0){
         console.log('[startup] 发现 sessionStorage 备份数据，history keys=', Object.keys(bd.history).length);
+        // 如果本地没有数据，提示用户恢复
+        const localRaw = localStorage.getItem('storyGame_user_'+ACCOUNT_NAME);
+        if(!localRaw || localRaw === '{}'){
+          const restore = confirm('📦 检测到有备份数据！\n\n备份包含 '+Object.keys(bd.history).length+' 天打卡记录\n点击"确定"从备份恢复数据');
+          if(restore){
+            G = {...makeDefaultState(), ...bd};
+            repairData();
+            save();
+            console.log('[startup] 已从 sessionStorage 恢复数据');
+          }
+        }
       }
-    }catch(e){}
+    }catch(e){console.error('[startup] 备份解析失败:',e)}
   }
   
   if(savedUser===ACCOUNT_NAME){
