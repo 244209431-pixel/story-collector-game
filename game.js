@@ -714,7 +714,7 @@ function getBlobId(user){
     || (function(){ try{ return sessionStorage.getItem('storyGame_blobId_'+user); }catch(e){ return null; } })();
 }
 
-// 【v11.2 修复】云端保存函数 - 修复返回值问题
+// 【v11.2 修复】云端保存函数 - 添加 CORS 错误检测
 async function cloudSave(data){
   try{
     updateSyncUI('syncing');
@@ -723,37 +723,63 @@ async function cloudSave(data){
     if(blobId){
       // 有 blobId，直接更新（带重试）
       console.log('[cloudSave] 开始 PUT 更新, blobId=',blobId);
-      const resp = await fetchWithRetry(JSONBLOB_API+'/'+blobId,{
-        method:'PUT',
-        headers:{'Content-Type':'application/json','Accept':'application/json'},
-        body:JSON.stringify(data)
-      },15000,2);
       
-      if(!resp.ok){
-        throw new Error('PUT 更新失败: ' + resp.status + ' ' + resp.statusText);
+      // 【v11.2 修复】添加 CORS 错误检测
+      try {
+        const resp = await fetchWithRetry(JSONBLOB_API+'/'+blobId,{
+          method:'PUT',
+          headers:{'Content-Type':'application/json','Accept':'application/json'},
+          body:JSON.stringify(data)
+        },15000,2);
+        
+        if(!resp.ok){
+          throw new Error('PUT 更新失败: ' + resp.status + ' ' + resp.statusText);
+        }
+        
+        console.log('[cloudSave] PUT 更新成功, blobId=',blobId);
+      } catch(e) {
+        // 检测 CORS 错误
+        if(e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.message.includes('CORS')) {
+          console.error('[cloudSave] ❌ CORS 跨域错误！jsonblob.com 可能已不支持跨域请求');
+          console.error('[cloudSave] 建议：使用 IndexedDB 本地备份 + 手动导出/导入');
+          showToast('⚠️ 云端同步不可用（跨域限制），请使用导出备份');
+          updateSyncUI('offline');
+          return false;
+        }
+        throw e; // 重新抛出其他错误
       }
-      
-      console.log('[cloudSave] PUT 更新成功, blobId=',blobId);
     }else{
       // 没有 blobId，创建新 blob（带重试）
       console.log('[cloudSave] 开始 POST 创建新 blob');
-      const resp=await fetchWithRetry(JSONBLOB_API,{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Accept':'application/json'},
-        body:JSON.stringify(data)
-      },15000,2);
       
-      if(resp.ok){
-        const loc=resp.headers.get('Location')||resp.headers.get('location');
-        if(loc){
-          const newId=loc.split('/').pop();
-          saveBlobId(currentUser, newId);
-          console.log('[cloudSave] POST 创建成功, newBlobId=',newId);
+      try {
+        const resp=await fetchWithRetry(JSONBLOB_API,{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Accept':'application/json'},
+          body:JSON.stringify(data)
+        },15000,2);
+        
+        if(resp.ok){
+          const loc=resp.headers.get('Location')||resp.headers.get('location');
+          if(loc){
+            const newId=loc.split('/').pop();
+            saveBlobId(currentUser, newId);
+            console.log('[cloudSave] POST 创建成功, newBlobId=',newId);
+          }else{
+            console.warn('[cloudSave] POST 成功但未返回 Location header');
+          }
         }else{
-          console.warn('[cloudSave] POST 成功但未返回 Location header');
+          throw new Error('POST 创建失败: ' + resp.status + ' ' + resp.statusText);
         }
-      }else{
-        throw new Error('POST 创建失败: ' + resp.status + ' ' + resp.statusText);
+      } catch(e) {
+        // 检测 CORS 错误
+        if(e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.message.includes('CORS')) {
+          console.error('[cloudSave] ❌ CORS 跨域错误！jsonblob.com 可能已不支持跨域请求');
+          showToast('⚠️ 云端同步不可用（跨域限制），请使用导出备份');
+          updateSyncUI('offline');
+          return false;
+        }
+        throw e;
       }
     }
     
@@ -766,7 +792,7 @@ async function cloudSave(data){
   }
 }
 
-// ===== 云端加载（v8.0：智能合并 + 以最新数据为准的多设备同步） =====
+// ===== 【v11.2 修复】云端加载（添加 CORS 错误检测） =====
 async function cloudLoad(){
   try{
     updateSyncUI('syncing');
@@ -781,10 +807,24 @@ async function cloudLoad(){
     
     console.log('[cloudLoad] 开始加载, blobId=',blobId,', isFirstLoad=',isFirstLoad);
     
-    // 使用带重试的 fetch（最多 3 次尝试，每次 20 秒超时）
-    const resp=await fetchWithRetry(JSONBLOB_API+'/'+blobId,{
-      headers:{'Accept':'application/json'}
-    },20000,2);
+    // 【v11.2 修复】添加 CORS 错误检测
+    let resp;
+    try {
+      // 使用带重试的 fetch（最多 3 次尝试，每次 20 秒超时）
+      resp = await fetchWithRetry(JSONBLOB_API+'/'+blobId,{
+        headers:{'Accept':'application/json'}
+      },20000,2);
+    } catch(e) {
+      // 检测 CORS 错误
+      if(e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.message.includes('CORS')) {
+        console.error('[cloudLoad] ❌ CORS 跨域错误！jsonblob.com 可能已不支持跨域请求');
+        console.error('[cloudLoad] 建议：使用 IndexedDB 本地备份 + 手动导出/导入');
+        showToast('⚠️ 云端同步不可用（跨域限制），已切换到本地模式');
+        updateSyncUI('offline');
+        return false;
+      }
+      throw e; // 重新抛出其他错误
+    }
     
     if(resp.ok){
       const data=await resp.json();
@@ -1032,19 +1072,27 @@ function updateSyncUI(status){
   const dot=document.getElementById('syncDot');
   const loginSync=document.getElementById('syncStatus');
   const syncInfo=document.getElementById('syncInfo');
+  const offlineTip=document.getElementById('offlineTip');
+  
   if(status==='syncing'){
     if(dot)dot.textContent='🔄';
     if(loginSync)loginSync.textContent='🔄 正在同步...';
     if(syncInfo)syncInfo.textContent='☁️ 正在同步...';
+    // 隐藏离线提示
+    if(offlineTip) offlineTip.style.display='none';
   }else if(status==='done'){
     if(dot)dot.textContent='☁️';
     const timeStr=new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
     if(loginSync)loginSync.textContent='✅ 云端已同步';
     if(syncInfo)syncInfo.textContent='☁️ 已同步 ('+timeStr+')';
+    // 隐藏离线提示
+    if(offlineTip) offlineTip.style.display='none';
   }else{
     if(dot)dot.textContent='📴';
     if(loginSync)loginSync.textContent='📴 离线模式（数据存在本地）';
     if(syncInfo)syncInfo.textContent='📴 离线模式';
+    // 【v11.2 新增】显示离线提示
+    if(offlineTip) offlineTip.style.display='block';
   }
 }
 

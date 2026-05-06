@@ -131,16 +131,26 @@
       <div class="card"><h3>📚 已收集的故事</h3><div id="collectedStories"></div></div>
       <div class="card" style="text-align:center">
         <h3>☁️ 云端同步</h3>
-        <p style="color:var(--t3);font-size:13px;margin:8px 0">数据实时同步到云端，换设备登录也能恢复数据</p>
         <div id="syncStatusPanel" style="padding:12px;margin:12px 0;border-radius:12px;background:rgba(168,85,247,0.05);border:1px solid rgba(168,85,247,0.1)">
           <div style="font-size:14px;color:var(--t2)" id="syncDetailStatus">检查中...</div>
         </div>
+        <!-- 【v11.2 新增】离线模式提示 -->
+        <div id="offlineTip" style="display:none;padding:12px;margin:12px 0;border-radius:12px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3)">
+          <div style="font-size:14px;color:#F59E0B;margin-bottom:8px">⚠️ 云端同步暂时不可用</div>
+          <div style="font-size:12px;color:var(--t2);text-align:left">
+            <p>原因：跨域限制（CORS）</p>
+            <p>建议：使用以下方式备份数据</p>
+            <p>1️⃣ IndexedDB 自动备份（推荐）</p>
+            <p>2️⃣ 手动导出/导入 JSON 文件</p>
+          </div>
+        </div>
+        <p style="color:var(--t3);font-size:13px;margin:8px 0">推荐：每周导出一次数据，保存到安全位置</p>
         <div style="display:flex;gap:8px;margin-bottom:12px">
           <button onclick="exportData()" style="flex:1;padding:12px;border:2px solid var(--border);border-radius:14px;background:var(--card);color:var(--t1);font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;transition:.3s">📤 导出数据</button>
           <button onclick="importData()" style="flex:1;padding:12px;border:2px solid #4A7CF7;border-radius:14px;background:var(--card);color:#4A7CF7;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;transition:.3s">📥 导入数据</button>
         </div>
         <button id="btnManualSync" onclick="manualSync()" style="width:100%;padding:14px;border:none;border-radius:14px;background:linear-gradient(135deg,#4A7CF7,#A855F7);color:white;font-size:16px;font-weight:600;font-family:inherit;cursor:pointer;box-shadow:0 4px 15px rgba(74,124,247,0.3);transition:.3s">☁️ 手动同步</button>
-        <p style="color:var(--t3);font-size:11px;margin-top:8px">💡 提示：数据每 30 秒自动同步一次，也可以手动点击同步</p>
+        <p style="color:var(--t3);font-size:11px;margin-top:8px">💡 提示：数据会自动备份到浏览器 IndexedDB</p>
       </div>
     </div>
   </div>
