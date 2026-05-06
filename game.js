@@ -1,24 +1,121 @@
 // ==========================================
-// 🎮 故事收集家 - 游戏核心引擎（智能多设备同步版）
-// v11.0 — 勋章兑换礼物 + 惊喜转盘
+// 🎮 故事收集家 - 游戏核心引擎（GitHub Gist 同步版）
+// v11.3 — GitHub Gist 云端同步
 // ==========================================
 
-// ===== 云同步配置 =====
+// ===== 云同步配置（GitHub Gist 方案） =====
 let currentUser=null;
 let selectedAvatar='👧';
 let syncTimer=null;
 let isFirstLoad=false; // 标记是否首次加载（本地无数据）
 const SYNC_STORAGE_PREFIX='storyGame_user_';
-const JSONBLOB_API='https://jsonblob.com/api/jsonBlob';
-// blobId 备份 key（不依赖 localStorage，使用固定格式便于恢复）
-const BLOBID_BACKUP_PREFIX='storyGame_blobBackup_';
+const GITHUB_API='https://api.github.com';
+const GITHUB_TOKEN_KEY='storyGame_gh_token';
+const GIST_DESC_PREFIX='Story Game Data Backup for ';
+const GIST_FILENAME='story-game-data.json';
 
-// 【v6.0 核心修复】为每个用户硬编码固定 blobId
-// 这样无论部署到任何域名（github.io / surge.sh / 其他），都能找到云端数据
-// 不再依赖 localStorage 存储 blobId，彻底解决换域名数据丢失问题
-const FIXED_BLOB_IDS={
-  '棠棠':'019ce108-5c9c-71b2-b1b0-dc8defa9cafe'
-};
+// ===== GitHub Token 管理 =====
+function getGitHubToken() {
+  return localStorage.getItem(GITHUB_TOKEN_KEY) || '';
+}
+
+function setGitHubToken(token) {
+  if (!token || token.trim() === '') {
+    localStorage.removeItem(GITHUB_TOKEN_KEY);
+    console.log('[GitHub] Token 已清除');
+    return false;
+  }
+  localStorage.setItem(GITHUB_TOKEN_KEY, token.trim());
+  console.log('[GitHub] Token 已保存（长度:', token.trim().length, '）');
+  return true;
+}
+
+function clearGitHubToken() {
+  localStorage.removeItem(GITHUB_TOKEN_KEY);
+  console.log('[GitHub] Token 已清除');
+}
+
+function hasGitHubToken() {
+  const token = getGitHubToken();
+  return token && token.length > 0;
+}
+
+// ===== Token UI 函数（供设置页面调用）=====
+function saveGitHubToken() {
+  const input = document.getElementById('githubTokenInput');
+  const statusEl = document.getElementById('tokenStatus');
+  if (!input) return;
+  
+  const token = input.value.trim();
+  if (!token) {
+    statusEl.style.color = '#EF4444';
+    statusEl.textContent = '⚠️ 请输入 Token';
+    return;
+  }
+  
+  if (!token.startsWith('ghp_') && !token.startsWith('github_pat_')) {
+    statusEl.style.color = '#EF4444';
+    statusEl.textContent = '⚠️ Token 格式不正确（应以 ghp_ 或 github_pat_ 开头）';
+    return;
+  }
+  
+  setGitHubToken(token);
+  statusEl.style.color = '#10B981';
+  statusEl.textContent = '✅ Token 已保存（仅保存在浏览器本地）';
+  
+  // 清空输入框（安全考虑）
+  input.value = '';
+  
+  // 刷新同步状态
+  updateSyncUI('done');
+  
+  console.log('[Token] Token 已保存');
+}
+
+function loadGitHubToken() {
+  const input = document.getElementById('githubTokenInput');
+  const statusEl = document.getElementById('tokenStatus');
+  if (!input) return;
+  
+  const token = getGitHubToken();
+  if (token) {
+    // 显示 token 长度，但不显示完整 token（安全考虑）
+    input.placeholder = `已配置 Token (${token.length} 字符)`;
+    if (statusEl) {
+      statusEl.style.color = '#10B981';
+      statusEl.textContent = '✅ Token 已配置';
+    }
+    // 隐藏离线提示
+    const offlineTip = document.getElementById('offlineTip');
+    if (offlineTip) offlineTip.style.display = 'none';
+  } else {
+    input.placeholder = '粘贴 GitHub Token (ghp_...)';
+    if (statusEl) {
+      statusEl.style.color = '#F59E0B';
+      statusEl.textContent = '⚠️ 请先配置 GitHub Token';
+    }
+    // 显示离线提示
+    const offlineTip = document.getElementById('offlineTip');
+    if (offlineTip) offlineTip.style.display = 'block';
+  }
+}
+
+// ===== Gist ID 管理 =====
+const GIST_ID_PREFIX = 'storyGame_gistId_';
+const GIST_ID_BACKUP_PREFIX = 'storyGame_gistBackup_';
+
+function saveGistId(user, gistId) {
+  localStorage.setItem(GIST_ID_PREFIX + user, gistId);
+  localStorage.setItem(GIST_ID_BACKUP_PREFIX + user, gistId);
+  try { sessionStorage.setItem(GIST_ID_PREFIX + user, gistId); } catch(e) {}
+  console.log('[Gist] 已保存 gistId, user=', user, ', id=', gistId);
+}
+
+function getGistId(user) {
+  return localStorage.getItem(GIST_ID_PREFIX + user)
+    || localStorage.getItem(GIST_ID_BACKUP_PREFIX + user)
+    || (function() { try { return sessionStorage.getItem(GIST_ID_PREFIX + user); } catch(e) { return null; } })();
+}
 
 const W=['日','一','二','三','四','五','六'];
 const JUMP=[1,2,4,6,0], SWIM=[3,5];
@@ -65,7 +162,7 @@ const MEDAL_LIST = [
   { icon:'🏅', title:'不朽传说', desc:'二十周以上！你已经超越了传说！' },
 ];
 
-// ===== 【v11.2】IndexedDB 持久备份系统 =====
+// ===== 【v11.3】IndexedDB 持久备份系统 =====
 const IDB_NAME = 'StoryGameDB';
 const IDB_VERSION = 1;
 const IDB_STORE = 'backups';
@@ -260,7 +357,7 @@ function save(){
   // 【v11.1】自动备份到 sessionStorage
   autoBackup();
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.2'};
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.3'};
   localStorage.setItem(key,JSON.stringify(data));
   console.log('[save] 已保存, history keys=',Object.keys(G.history).length,', weekly keys=',Object.keys(G.weekly).length);
   // 异步同步到云端（每次保存都同步）
@@ -347,7 +444,7 @@ function load(){
   if(!isFirstLoad){
     save();
   
-  // 【v11.2】检查是否需要提醒导出备份
+  // 【v11.3】检查是否需要提醒导出备份
   const lastExport = localStorage.getItem(SYNC_STORAGE_PREFIX + currentUser + '_lastExport');
   if (lastExport) {
     const daysSinceExport = (Date.now() - parseInt(lastExport)) / (1000 * 60 * 60 * 24);
@@ -714,139 +811,160 @@ function getBlobId(user){
     || (function(){ try{ return sessionStorage.getItem('storyGame_blobId_'+user); }catch(e){ return null; } })();
 }
 
-// 【v11.2 修复】云端保存函数 - 添加 CORS 错误检测
+// ===== 【v11.3】GitHub Gist 云端保存函数 =====
 async function cloudSave(data){
   try{
+    // 检查是否有 GitHub Token
+    const token = getGitHubToken();
+    if (!token) {
+      console.warn('[cloudSave] 未配置 GitHub Token，跳过云端同步');
+      updateSyncUI('offline');
+      return false;
+    }
+
     updateSyncUI('syncing');
-    const blobId=getBlobId(currentUser);
+    const gistId = getGistId(currentUser);
     
-    if(blobId){
-      // 有 blobId，直接更新（带重试）
-      console.log('[cloudSave] 开始 PUT 更新, blobId=',blobId);
-      
-      // 【v11.2 修复】添加 CORS 错误检测
-      try {
-        const resp = await fetchWithRetry(JSONBLOB_API+'/'+blobId,{
-          method:'PUT',
-          headers:{'Content-Type':'application/json','Accept':'application/json'},
-          body:JSON.stringify(data)
-        },15000,2);
-        
-        if(!resp.ok){
-          throw new Error('PUT 更新失败: ' + resp.status + ' ' + resp.statusText);
+    // 构造 Gist API 请求体
+    const fileName = GIST_FILENAME;
+    const gistData = {
+      description: GIST_DESC_PREFIX + currentUser,
+      public: false, // 私有 Gist
+      files: {
+        [fileName]: {
+          content: JSON.stringify(data, null, 2)
         }
-        
-        console.log('[cloudSave] PUT 更新成功, blobId=',blobId);
-      } catch(e) {
-        // 检测 CORS 错误
-        if(e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.message.includes('CORS')) {
-          console.error('[cloudSave] ❌ CORS 跨域错误！jsonblob.com 可能已不支持跨域请求');
-          console.error('[cloudSave] 建议：使用 IndexedDB 本地备份 + 手动导出/导入');
-          showToast('⚠️ 云端同步不可用（跨域限制），请使用导出备份');
-          updateSyncUI('offline');
-          return false;
-        }
-        throw e; // 重新抛出其他错误
       }
-    }else{
-      // 没有 blobId，创建新 blob（带重试）
-      console.log('[cloudSave] 开始 POST 创建新 blob');
+    };
+
+    if (gistId) {
+      // 有 gistId，更新现有 Gist
+      console.log('[cloudSave] 开始更新 Gist, gistId=', gistId);
       
-      try {
-        const resp=await fetchWithRetry(JSONBLOB_API,{
-          method:'POST',
-          headers:{'Content-Type':'application/json','Accept':'application/json'},
-          body:JSON.stringify(data)
-        },15000,2);
-        
-        if(resp.ok){
-          const loc=resp.headers.get('Location')||resp.headers.get('location');
-          if(loc){
-            const newId=loc.split('/').pop();
-            saveBlobId(currentUser, newId);
-            console.log('[cloudSave] POST 创建成功, newBlobId=',newId);
-          }else{
-            console.warn('[cloudSave] POST 成功但未返回 Location header');
-          }
-        }else{
-          throw new Error('POST 创建失败: ' + resp.status + ' ' + resp.statusText);
-        }
-      } catch(e) {
-        // 检测 CORS 错误
-        if(e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.message.includes('CORS')) {
-          console.error('[cloudSave] ❌ CORS 跨域错误！jsonblob.com 可能已不支持跨域请求');
-          showToast('⚠️ 云端同步不可用（跨域限制），请使用导出备份');
-          updateSyncUI('offline');
-          return false;
-        }
-        throw e;
+      const resp = await fetchWithRetry(`${GITHUB_API}/gists/${gistId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(gistData)
+      }, 15000, 2);
+
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        throw new Error(`更新 Gist 失败: ${resp.status} ${resp.statusText} - ${errText}`);
+      }
+
+      console.log('[cloudSave] ✅ Gist 更新成功, gistId=', gistId);
+    } else {
+      // 没有 gistId，创建新 Gist
+      console.log('[cloudSave] 开始创建新 Gist...');
+      
+      const resp = await fetchWithRetry(`${GITHUB_API}/gists`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(gistData)
+      }, 15000, 2);
+
+      if (resp.ok) {
+        const result = await resp.json();
+        const newGistId = result.id;
+        saveGistId(currentUser, newGistId);
+        console.log('[cloudSave] ✅ Gist 创建成功, newGistId=', newGistId);
+      } else {
+        const errText = await resp.text().catch(() => '');
+        throw new Error(`创建 Gist 失败: ${resp.status} ${resp.statusText} - ${errText}`);
       }
     }
     
     updateSyncUI('done');
     return true;
-  }catch(e){
-    console.error('[cloudSave] 云端同步失败:',e.message);
+  } catch(e) {
+    console.error('[cloudSave] ❌ 云端同步失败:', e.message);
+    
+    // Token 无效时提示用户重新配置
+    if (e.message.includes('401') || e.message.includes('403')) {
+      showToast('⚠️ GitHub Token 无效或已过期，请在设置中重新配置');
+      clearGitHubToken(); // 清除无效 Token
+    } else {
+      showToast('⚠️ 云端同步失败: ' + e.message.substring(0, 50));
+    }
+    
     updateSyncUI('offline');
     return false;
   }
 }
 
-// ===== 【v11.2 修复】云端加载（添加 CORS 错误检测） =====
+// ===== 【v11.3】GitHub Gist 云端加载 =====
 async function cloudLoad(){
   try{
+    // 检查是否有 GitHub Token
+    const token = getGitHubToken();
+    if (!token) {
+      console.warn('[cloudLoad] 未配置 GitHub Token，跳过云端加载');
+      updateSyncUI('offline');
+      return false;
+    }
+
     updateSyncUI('syncing');
-    const blobId=getBlobId(currentUser);
-    if(!blobId){
-      console.log('[cloudLoad] 无 blobId，跳过云端加载');
+    const gistId = getGistId(currentUser);
+    
+    if(!gistId){
+      console.log('[cloudLoad] 无 gistId，跳过云端加载');
       updateSyncUI('done');
       return false;
     }
-    // blobId 存在，确保 localStorage 中也有备份
-    saveBlobId(currentUser, blobId);
     
-    console.log('[cloudLoad] 开始加载, blobId=',blobId,', isFirstLoad=',isFirstLoad);
+    // gistId 存在，确保 localStorage 中也有备份
+    saveGistId(currentUser, gistId);
     
-    // 【v11.2 修复】添加 CORS 错误检测
-    let resp;
-    try {
-      // 使用带重试的 fetch（最多 3 次尝试，每次 20 秒超时）
-      resp = await fetchWithRetry(JSONBLOB_API+'/'+blobId,{
-        headers:{'Accept':'application/json'}
-      },20000,2);
-    } catch(e) {
-      // 检测 CORS 错误
-      if(e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.message.includes('CORS')) {
-        console.error('[cloudLoad] ❌ CORS 跨域错误！jsonblob.com 可能已不支持跨域请求');
-        console.error('[cloudLoad] 建议：使用 IndexedDB 本地备份 + 手动导出/导入');
-        showToast('⚠️ 云端同步不可用（跨域限制），已切换到本地模式');
-        updateSyncUI('offline');
-        return false;
+    console.log('[cloudLoad] 开始加载, gistId=', gistId, ', isFirstLoad=', isFirstLoad);
+    
+    // 使用 GitHub Gist API 加载数据
+    const resp = await fetchWithRetry(`${GITHUB_API}/gists/${gistId}`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json'
       }
-      throw e; // 重新抛出其他错误
-    }
+    }, 20000, 2);
     
     if(resp.ok){
-      const data=await resp.json();
+      const gist = await resp.json();
+      const fileName = GIST_FILENAME;
+      
+      if (!gist.files || !gist.files[fileName]) {
+        console.warn('[cloudLoad] Gist 中未找到文件:', fileName);
+        updateSyncUI('done');
+        return false;
+      }
+      
+      const fileContent = gist.files[fileName].content;
+      const data = JSON.parse(fileContent);
+      
       console.log('[cloudLoad] 云端数据:', JSON.stringify({
-        _user:data._user,
-        _version:data._version,
-        _lastSync:data._lastSync,
-        date:data.date,
-        historyKeys:data.history?Object.keys(data.history):[],
-        weeklyKeys:data.weekly?Object.keys(data.weekly):[],
-        totalDays:data.totalDays,
-        streak:data.streak
+        _user: data._user,
+        _version: data._version,
+        _lastSync: data._lastSync,
+        date: data.date,
+        historyKeys: data.history ? Object.keys(data.history) : [],
+        weeklyKeys: data.weekly ? Object.keys(data.weekly) : [],
+        totalDays: data.totalDays,
+        streak: data.streak
       }));
       
-      if(data&&data._user===currentUser){
-        let changed=false;
+      if(data && data._user === currentUser){
+        let changed = false;
         
-        // 【v11.1 修复】验证云端数据完整性：至少要有 history 或 medals 或 myStories 之一有数据
-        const cloudHasData= (data.history&&Object.keys(data.history).length>0) ||
-                              (data.weekly&&Object.keys(data.weekly).length>0) ||
-                              (data.medals&&data.medals.length>0) ||
-                              (data.myStories&&data.myStories.length>0);
+        // 验证云端数据完整性
+        const cloudHasData = (data.history && Object.keys(data.history).length > 0) ||
+                              (data.weekly && Object.keys(data.weekly).length > 0) ||
+                              (data.medals && data.medals.length > 0) ||
+                              (data.myStories && data.myStories.length > 0);
         
         if(!cloudHasData){
           console.warn('[cloudLoad] 云端数据不完整（关键字段为空），拒绝覆盖本地数据！');
@@ -855,179 +973,166 @@ async function cloudLoad(){
         }
         
         // 获取本地和云端的最后同步时间
-        const localKey=SYNC_STORAGE_PREFIX+currentUser;
-        const localRaw=localStorage.getItem(localKey);
-        let localLastSync=0;
+        const localKey = SYNC_STORAGE_PREFIX + currentUser;
+        const localRaw = localStorage.getItem(localKey);
+        let localLastSync = 0;
         if(localRaw){
-          try{ const ld=JSON.parse(localRaw); localLastSync=ld._lastSync||0; }catch(e){}
+          try { const ld = JSON.parse(localRaw); localLastSync = ld._lastSync || 0; } catch(e) {}
         }
-        const cloudLastSync=data._lastSync||0;
+        const cloudLastSync = data._lastSync || 0;
         
-        console.log('[cloudLoad] 时间戳对比: 本地=',localLastSync,new Date(localLastSync).toLocaleString(),', 云端=',cloudLastSync,new Date(cloudLastSync).toLocaleString());
+        console.log('[cloudLoad] 时间戳对比: 本地=', localLastSync, ' ', new Date(localLastSync).toLocaleString(), ', 云端=', cloudLastSync, ' ', new Date(cloudLastSync).toLocaleString());
         
-        // 【v8.0 核心】判断云端数据是否比本地更新
-        const cloudIsNewer=cloudLastSync>localLastSync;
+        const cloudIsNewer = cloudLastSync > localLastSync;
         
-        // 【v8.0 关键修复】首次加载（本地无数据）或云端比本地新 → 以云端为准恢复
-        if(isFirstLoad || (cloudIsNewer && localLastSync>0)){
-          const mode=isFirstLoad?'首次加载':'云端更新(以云端/手机数据为准)';
-          console.log('[cloudLoad]',mode,'，执行完整恢复...');
+        if(isFirstLoad || (cloudIsNewer && localLastSync > 0)){
+          const mode = isFirstLoad ? '首次加载' : '云端更新(以云端/手机数据为准)';
+          console.log('[cloudLoad]', mode, '，执行完整恢复...');
           
           // 完整恢复所有字段（以云端为准）
-          if(data.date) G.date=data.date;
-          if(typeof data.jumpCount==='number') G.jumpCount=data.jumpCount;
-          if(typeof data.swimDone==='boolean') G.swimDone=data.swimDone;
-          if(data.tasks&&typeof data.tasks==='object') G.tasks={...G.tasks,...data.tasks};
-          if(data.habits&&typeof data.habits==='object') G.habits={...G.habits,...data.habits};
-          if(Array.isArray(data.gems)) G.gems=[...data.gems];
-          if(typeof data.streak==='number') G.streak=data.streak;
-          if(data.weekly&&typeof data.weekly==='object') G.weekly={...data.weekly};
-          if(Array.isArray(data.collected)) G.collected=[...data.collected];
-          if(Array.isArray(data.myStories)) G.myStories=[...data.myStories];
-          if(data.ach&&typeof data.ach==='object') G.ach={...G.ach,...data.ach};
-          if(typeof data.consJump==='number') G.consJump=data.consJump;
-          if(typeof data.weekSwim==='number') G.weekSwim=data.weekSwim;
-          if(typeof data.totalDays==='number') G.totalDays=data.totalDays;
-          if(typeof data.dirUnlocked==='boolean') G.dirUnlocked=data.dirUnlocked;
-          if(data.dirUnlockedDate) G.dirUnlockedDate=data.dirUnlockedDate;
-          if(typeof data.dirUnlockedEver==='boolean') G.dirUnlockedEver=data.dirUnlockedEver;
-          if(typeof data.dirCycleCount==='number') G.dirCycleCount=data.dirCycleCount;
-          if(data.history&&typeof data.history==='object') G.history={...data.history};
-          // 【v10.0】恢复勋章数据
-          if(Array.isArray(data.medals)) G.medals=[...data.medals];
-          // 【v11.0】恢复转盘记录
-          if(Array.isArray(data.spinHistory)) G.spinHistory=[...data.spinHistory];
+          if(data.date) G.date = data.date;
+          if(typeof data.jumpCount === 'number') G.jumpCount = data.jumpCount;
+          if(typeof data.swimDone === 'boolean') G.swimDone = data.swimDone;
+          if(data.tasks && typeof data.tasks === 'object') G.tasks = {...G.tasks, ...data.tasks};
+          if(data.habits && typeof data.habits === 'object') G.habits = {...G.habits, ...data.habits};
+          if(Array.isArray(data.gems)) G.gems = [...data.gems];
+          if(typeof data.streak === 'number') G.streak = data.streak;
+          if(data.weekly && typeof data.weekly === 'object') G.weekly = {...data.weekly};
+          if(Array.isArray(data.collected)) G.collected = [...data.collected];
+          if(Array.isArray(data.myStories)) G.myStories = [...data.myStories];
+          if(data.ach && typeof data.ach === 'object') G.ach = {...G.ach, ...data.ach};
+          if(typeof data.consJump === 'number') G.consJump = data.consJump;
+          if(typeof data.weekSwim === 'number') G.weekSwim = data.weekSwim;
+          if(typeof data.totalDays === 'number') G.totalDays = data.totalDays;
+          if(typeof data.dirUnlocked === 'boolean') G.dirUnlocked = data.dirUnlocked;
+          if(data.dirUnlockedDate) G.dirUnlockedDate = data.dirUnlockedDate;
+          if(typeof data.dirUnlockedEver === 'boolean') G.dirUnlockedEver = data.dirUnlockedEver;
+          if(typeof data.dirCycleCount === 'number') G.dirCycleCount = data.dirCycleCount;
+          if(data.history && typeof data.history === 'object') G.history = {...data.history};
+          if(Array.isArray(data.medals)) G.medals = [...data.medals];
+          if(Array.isArray(data.spinHistory)) G.spinHistory = [...data.spinHistory];
           
           // 恢复后执行跨天处理
-          const today=new Date().toDateString();
-          if(G.date && G.date!==today){
-            console.log('[cloudLoad] 恢复后检测到跨天: 上次=',G.date,', 今天=',today);
+          const today = new Date().toDateString();
+          if(G.date && G.date !== today){
+            console.log('[cloudLoad] 恢复后检测到跨天: 上次=', G.date, ', 今天=', today);
             handleDayChange(G.date, today);
           } else if(!G.date){
-            G.date=today;
+            G.date = today;
           }
           
-          changed=true;
-          isFirstLoad=false;
-          console.log('[cloudLoad] 完整恢复完成, history keys=',Object.keys(G.history),', weekly keys=',Object.keys(G.weekly));
+          changed = true;
+          isFirstLoad = false;
+          console.log('[cloudLoad] 完整恢复完成, history keys=', Object.keys(G.history), ', weekly keys=', Object.keys(G.weekly));
         } else {
-          // 本地更新或时间相同：智能合并（双向取最优值）
+          // 本地更新或时间相同：智能合并
           console.log('[cloudLoad] 本地数据较新或相同，执行智能合并...');
           
-          // 合并 history（逐天比较，取更完整的记录）
+          // 合并 history
           if(data.history){
-            Object.keys(data.history).forEach(dateStr=>{
-              const cloudRec=data.history[dateStr];
-              const localRec=G.history[dateStr];
+            Object.keys(data.history).forEach(dateStr => {
+              const cloudRec = data.history[dateStr];
+              const localRec = G.history[dateStr];
               if(!localRec){
-                // 本地没有这天的记录 → 直接用云端的
-                G.history[dateStr]=cloudRec;
-                changed=true;
-                console.log('[cloudLoad] 合并缺失历史:',dateStr);
+                G.history[dateStr] = cloudRec;
+                changed = true;
+                console.log('[cloudLoad] 合并缺失历史:', dateStr);
               } else if(cloudRec && cloudRec.tasks && localRec.tasks){
-                // 两边都有记录 → 取更完整的（完成项更多的一方）
-                const cloudDone=Object.values(cloudRec.tasks).filter(v=>v).length;
-                const localDone=Object.values(localRec.tasks).filter(v=>v).length;
-                if(cloudDone>localDone){
-                  G.history[dateStr]=cloudRec;
-                  changed=true;
-                  console.log('[cloudLoad] 云端记录更完整，覆盖:',dateStr,'(云端完成'+cloudDone+'项 > 本地'+localDone+'项)');
+                const cloudDone = Object.values(cloudRec.tasks).filter(v => v).length;
+                const localDone = Object.values(localRec.tasks).filter(v => v).length;
+                if(cloudDone > localDone){
+                  G.history[dateStr] = cloudRec;
+                  changed = true;
+                  console.log('[cloudLoad] 云端记录更完整，覆盖:', dateStr);
                 }
               }
             });
           }
-          // 合并 weekly（取更好的值：true > partial > false）
+          // 合并 weekly
           if(data.weekly){
-            Object.keys(data.weekly).forEach(dateStr=>{
-              const cloudVal=data.weekly[dateStr];
-              const localVal=G.weekly[dateStr];
-              // 值优先级：true > 'partial' > false > undefined
-              const valRank=v=>v===true?3:v==='partial'?2:v===false?1:0;
-              if(valRank(cloudVal)>valRank(localVal)){
-                G.weekly[dateStr]=cloudVal;
-                changed=true;
+            Object.keys(data.weekly).forEach(dateStr => {
+              const cloudVal = data.weekly[dateStr];
+              const localVal = G.weekly[dateStr];
+              const valRank = v => v === true ? 3 : v === 'partial' ? 2 : v === false ? 1 : 0;
+              if(valRank(cloudVal) > valRank(localVal)){
+                G.weekly[dateStr] = cloudVal;
+                changed = true;
               }
             });
           }
-          // 合并今日当天数据：如果云端今天的打卡数据更完整，也要覆盖
-          const today=new Date().toDateString();
-          if(data.date===today && G.date===today){
-            // 比较今日任务完成数
+          // 合并今日数据
+          const today = new Date().toDateString();
+          if(data.date === today && G.date === today){
             if(data.tasks && G.tasks){
-              const cloudTaskDone=Object.values(data.tasks).filter(v=>v).length;
-              const localTaskDone=Object.values(G.tasks).filter(v=>v).length;
-              if(cloudTaskDone>localTaskDone){
-                G.tasks={...G.tasks,...data.tasks};
-                if(typeof data.jumpCount==='number' && data.jumpCount>G.jumpCount) G.jumpCount=data.jumpCount;
-                if(data.swimDone && !G.swimDone) G.swimDone=true;
-                if(data.habits) G.habits={...G.habits,...data.habits};
-                if(Array.isArray(data.gems) && data.gems.length>G.gems.length) G.gems=[...data.gems];
-                changed=true;
-                console.log('[cloudLoad] 云端今日数据更完整，合并今日任务 (云端'+cloudTaskDone+'项 > 本地'+localTaskDone+'项)');
+              const cloudTaskDone = Object.values(data.tasks).filter(v => v).length;
+              const localTaskDone = Object.values(G.tasks).filter(v => v).length;
+              if(cloudTaskDone > localTaskDone){
+                G.tasks = {...G.tasks, ...data.tasks};
+                if(typeof data.jumpCount === 'number' && data.jumpCount > G.jumpCount) G.jumpCount = data.jumpCount;
+                if(data.swimDone && !G.swimDone) G.swimDone = true;
+                if(data.habits) G.habits = {...G.habits, ...data.habits};
+                if(Array.isArray(data.gems) && data.gems.length > G.gems.length) G.gems = [...data.gems];
+                changed = true;
               }
             }
           }
-          // 合并 collected 和 myStories（去重）
+          // 合并 collected 和 myStories
           if(Array.isArray(data.collected)){
-            const existingTitles=new Set(G.collected.map(s=>s.title+s.date));
-            data.collected.forEach(s=>{
-              if(!existingTitles.has(s.title+s.date)){
+            const existingTitles = new Set(G.collected.map(s => s.title + s.date));
+            data.collected.forEach(s => {
+              if(!existingTitles.has(s.title + s.date)){
                 G.collected.push(s);
-                changed=true;
+                changed = true;
               }
             });
           }
           if(Array.isArray(data.myStories)){
-            const existingStories=new Set(G.myStories.map(s=>s.text));
-            data.myStories.forEach(s=>{
+            const existingStories = new Set(G.myStories.map(s => s.text));
+            data.myStories.forEach(s => {
               if(!existingStories.has(s.text)){
                 G.myStories.push(s);
-                changed=true;
+                changed = true;
               }
             });
           }
-          // 成就合并（【v8.6】jumpHero/waterSpirit/goodHabit/storyDirector 按实际数据决定，其他只向上合并）
+          // 合并成就
           if(data.ach){
-            Object.keys(data.ach).forEach(k=>{
-              // 这些成就由 repairData 根据实际数据决定，不从云端强制覆盖
-              if(k==='jumpHero'||k==='waterSpirit'||k==='goodHabit'||k==='storyDirector') return;
-              if(data.ach[k]&&!G.ach[k]){
-                G.ach[k]=true;
-                changed=true;
+            Object.keys(data.ach).forEach(k => {
+              if(k === 'jumpHero' || k === 'waterSpirit' || k === 'goodHabit' || k === 'storyDirector') return;
+              if(data.ach[k] && !G.ach[k]){
+                G.ach[k] = true;
+                changed = true;
               }
             });
           }
-          if(data.dirUnlocked&&!G.dirUnlocked){G.dirUnlocked=true;changed=true;}
-          if(data.dirUnlockedDate&&!G.dirUnlockedDate){G.dirUnlockedDate=data.dirUnlockedDate;changed=true;}
-          if(data.dirUnlockedEver&&!G.dirUnlockedEver){G.dirUnlockedEver=true;changed=true;}
-          if(typeof data.dirCycleCount==='number'&&data.dirCycleCount>G.dirCycleCount){G.dirCycleCount=data.dirCycleCount;changed=true;}
-          // 【v10.0】合并勋章（按 weekId 去重合并，只增不删）
+          if(data.dirUnlocked && !G.dirUnlocked) { G.dirUnlocked = true; changed = true; }
+          if(data.dirUnlockedDate && !G.dirUnlockedDate) { G.dirUnlockedDate = data.dirUnlockedDate; changed = true; }
+          if(data.dirUnlockedEver && !G.dirUnlockedEver) { G.dirUnlockedEver = true; changed = true; }
+          if(typeof data.dirCycleCount === 'number' && data.dirCycleCount > G.dirCycleCount) { G.dirCycleCount = data.dirCycleCount; changed = true; }
+          // 合并勋章
           if(Array.isArray(data.medals)){
-            const existingWeekIds=new Set(G.medals.map(m=>m.weekId));
-            data.medals.forEach(m=>{
-              if(m.weekId&&!existingWeekIds.has(m.weekId)){
+            const existingWeekIds = new Set(G.medals.map(m => m.weekId));
+            data.medals.forEach(m => {
+              if(m.weekId && !existingWeekIds.has(m.weekId)){
                 G.medals.push(m);
-                changed=true;
-                console.log('[cloudLoad] 合并勋章:',m.weekId,m.title);
-              } else if(m.weekId&&existingWeekIds.has(m.weekId)){
-                // 【v11.0】合并 redeemed 状态（只向上合并 true）
-                const localMedal=G.medals.find(lm=>lm.weekId===m.weekId);
-                if(localMedal&&m.redeemed&&!localMedal.redeemed){
-                  localMedal.redeemed=true;
-                  localMedal.redeemedDate=m.redeemedDate;
-                  changed=true;
+                changed = true;
+              } else if(m.weekId && existingWeekIds.has(m.weekId)){
+                const localMedal = G.medals.find(lm => lm.weekId === m.weekId);
+                if(localMedal && m.redeemed && !localMedal.redeemed){
+                  localMedal.redeemed = true;
+                  localMedal.redeemedDate = m.redeemedDate;
+                  changed = true;
                 }
               }
             });
           }
-          // 【v11.0】合并转盘记录（按 triggerMedalIndex 去重）
+          // 合并转盘记录
           if(Array.isArray(data.spinHistory)){
-            const existingSpins=new Set(G.spinHistory.map(s=>s.triggerMedalIndex));
-            data.spinHistory.forEach(s=>{
+            const existingSpins = new Set(G.spinHistory.map(s => s.triggerMedalIndex));
+            data.spinHistory.forEach(s => {
               if(!existingSpins.has(s.triggerMedalIndex)){
                 G.spinHistory.push(s);
-                changed=true;
-                console.log('[cloudLoad] 合并转盘记录:',s.triggerMedalIndex,s.result);
+                changed = true;
               }
             });
           }
@@ -1037,7 +1142,6 @@ async function cloudLoad(){
           console.log('[cloudLoad] 数据已更新，执行修复并保存');
           repairData();
           save();
-          // 刷新界面
           initGame();
         } else {
           console.log('[cloudLoad] 云端无新数据需要合并');
@@ -1045,23 +1149,30 @@ async function cloudLoad(){
         updateSyncUI('done');
         return changed;
       } else {
-        console.log('[cloudLoad] 云端数据用户不匹配:', data&&data._user, '!==', currentUser);
+        console.log('[cloudLoad] 云端数据用户不匹配:', data && data._user, '!==', currentUser);
       }
     } else {
-      console.log('[cloudLoad] HTTP 错误:', resp.status);
+      const errText = await resp.text().catch(() => '');
+      console.log('[cloudLoad] HTTP 错误:', resp.status, errText);
+      
+      // Token 无效时清除
+      if (resp.status === 401 || resp.status === 403) {
+        console.error('[cloudLoad] Token 无效，已清除');
+        clearGitHubToken();
+        showToast('⚠️ GitHub Token 无效或已过期，请在设置中重新配置');
+      }
     }
     updateSyncUI('done');
     return false;
-  }catch(e){
-    console.log('[cloudLoad] 云端加载失败:',e.message);
+  } catch(e) {
+    console.error('[cloudLoad] ❌ 云端加载失败:', e.message);
     updateSyncUI('offline');
     // 如果是首次加载但云端也失败了，保存空状态（但不覆盖云端）
     if(isFirstLoad){
-      isFirstLoad=false;
-      // 只保存到本地，不触发 cloudSave，避免空数据覆盖云端
-      const key=SYNC_STORAGE_PREFIX+currentUser;
-      const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.2'};
-      localStorage.setItem(key,JSON.stringify(data));
+      isFirstLoad = false;
+      const key = SYNC_STORAGE_PREFIX + currentUser;
+      const data = {...G, _user: currentUser, _avatar: selectedAvatar, _lastSync: Date.now(), _version: 'v11.3'};
+      localStorage.setItem(key, JSON.stringify(data));
       console.log('[cloudLoad] 首次加载云端失败，仅保存到本地（不覆盖云端）');
     }
     return false;
@@ -1091,12 +1202,12 @@ function updateSyncUI(status){
     if(dot)dot.textContent='📴';
     if(loginSync)loginSync.textContent='📴 离线模式（数据存在本地）';
     if(syncInfo)syncInfo.textContent='📴 离线模式';
-    // 【v11.2 新增】显示离线提示
+    // 【v11.3 新增】显示离线提示
     if(offlineTip) offlineTip.style.display='block';
   }
 }
 
-// ===== 【v11.2 修复】手动同步（添加详细错误日志） =====
+// ===== 【v11.3 修复】手动同步（添加详细错误日志） =====
 async function manualSync(){
   if(!currentUser){showToast('请先登录');return;}
   const btn=document.getElementById('btnManualSync');
@@ -1115,7 +1226,7 @@ async function manualSync(){
     
     // 步骤2：准备数据
     console.log('[manualSync] 步骤2/3：准备数据...');
-    const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.2'};
+    const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.3'};
     console.log('[manualSync] 数据大小:', JSON.stringify(data).length, 'bytes');
     
     // 步骤3：上传到云端
@@ -1147,7 +1258,7 @@ async function manualSync(){
 
 
 // ===== 【v11.1】数据导出/导入（防止数据丢失）=====
-// 【v11.2】增强导出功能
+// 【v11.3】增强导出功能
 function exportData(){
   if(!currentUser){showToast('请先登录');return;}
   
@@ -1156,7 +1267,7 @@ function exportData(){
     // 元数据
     exportDate: now.toISOString(),
     exportDateLocale: now.toLocaleString('zh-CN'),
-    version: 'v11.2',
+    version: 'v11.3',
     userId: currentUser,
     
     // 核心数据（从 G 对象展开）
@@ -1166,7 +1277,7 @@ function exportData(){
     _user: currentUser,
     _avatar: selectedAvatar,
     _lastSync: Date.now(),
-    _version: 'v11.2'
+    _version: 'v11.3'
   };
   
   const json = JSON.stringify(data, null, 2);
@@ -1321,7 +1432,7 @@ async function doLogin(){
     if(!currentUser)return;
     try{
       await cloudLoad();
-      await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.2'});
+      await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.3'});
     }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
   },30000);
 }
@@ -2211,7 +2322,7 @@ function checkWeeklyMedal(){
   
   // 保存（不再递归调用 save，直接本地保存）
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.2'};
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.3'};
   localStorage.setItem(key,JSON.stringify(data));
   cloudSave(data);
   
@@ -2887,6 +2998,9 @@ function initGame(){
     // 先用本地数据初始化游戏，让用户立即可以操作
     initGame();
     
+    // 【v11.3】加载 GitHub Token（填充设置页面输入框）
+    loadGitHubToken();
+    
     // 然后在后台静默同步云端数据（不阻塞界面）
     cloudLoad().then(()=>{
       // 云端数据加载完后重新渲染一次以确保数据最新
@@ -2906,7 +3020,7 @@ function initGame(){
       // 【v10.0】先拉取云端最新数据合并，再上传（避免覆盖其他设备的新数据）
       try{
         await cloudLoad();
-        await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.2'});
+        await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.3'});
       }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
     },30000);
   }else{
@@ -2920,7 +3034,7 @@ function initGame(){
     if(e.key==='Enter')doLogin();
   });
 })();
-// ===== 【v11.2】数据补录工具 =====
+// ===== 【v11.3】数据补录工具 =====
 
 // 补录工具状态
 let recoveryDate = new Date();
@@ -3292,8 +3406,8 @@ function checkRecoveryMode() {
   }
 }
 
-console.log('[v11.2] 数据补录工具已加载');
-// ===== 【v11.2】启动时恢复引导 =====
+console.log('[v11.3] 数据补录工具已加载');
+// ===== 【v11.3】启动时恢复引导 =====
 
 // 检查并提示恢复备份
 async function checkAndPromptRestore() {
@@ -3333,5 +3447,5 @@ async function checkAndPromptRestore() {
   }
 }
 
-console.log('[v11.2] 启动恢复引导功能已加载');
+console.log('[v11.3] 启动恢复引导功能已加载');
 
