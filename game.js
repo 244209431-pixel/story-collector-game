@@ -126,6 +126,8 @@ function save(){
     }
   }
 
+  // 【v11.1】自动备份到 sessionStorage
+  autoBackup();
   const key=SYNC_STORAGE_PREFIX+currentUser;
   const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11'};
   localStorage.setItem(key,JSON.stringify(data));
@@ -180,6 +182,13 @@ function load(){
       console.log('[load] weekly keys=',Object.keys(G.weekly));
     }catch(e){
       console.error('[load] JSON解析错误',e);
+      // 【v11.1 修复】解析失败尝试从云端恢复
+      console.log('[load] 尝试从云端恢复数据...');
+      cloudLoad().then(()=>{
+        console.log('[load] 云端恢复结果: history keys=',Object.keys(G.history||{}).length);
+      }).catch(err=>{
+        console.error('[load] 云端恢复也失败:',err);
+      });
     }
   } else {
     // 本地完全没有数据（首次使用 / 缓存被清 / 换了设备）
@@ -636,6 +645,18 @@ async function cloudLoad(){
       if(data&&data._user===currentUser){
         let changed=false;
         
+        // 【v11.1 修复】验证云端数据完整性：至少要有 history 或 medals 或 myStories 之一有数据
+        const cloudHasData= (data.history&&Object.keys(data.history).length>0) ||
+                              (data.weekly&&Object.keys(data.weekly).length>0) ||
+                              (data.medals&&data.medals.length>0) ||
+                              (data.myStories&&data.myStories.length>0);
+        
+        if(!cloudHasData){
+          console.warn('[cloudLoad] 云端数据不完整（关键字段为空），拒绝覆盖本地数据！');
+          updateSyncUI('done');
+          return false;
+        }
+        
         // 获取本地和云端的最后同步时间
         const localKey=SYNC_STORAGE_PREFIX+currentUser;
         const localRaw=localStorage.getItem(localKey);
@@ -899,6 +920,76 @@ async function manualSync(){
   if(btn){btn.disabled=false;btn.textContent='☁️ 手动同步';}
 }
 
+
+// ===== 【v11.1】数据导出/导入（防止数据丢失）=====
+function exportData(){
+  if(!currentUser){showToast('请先登录');return;}
+  const data = {...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11'};
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const today = new Date().toISOString().split('T')[0];
+  a.download = `故事收集家-数据备份-${today}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('✅ 数据已导出！请保存到安全位置');
+  console.log('[export] 数据已导出, history keys=',Object.keys(data.history||{}).length);
+}
+
+function importData(){
+  if(!currentUser){showToast('请先登录');return;}
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = function(e){
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(ev){
+      try{
+        const data = JSON.parse(ev.target.result);
+        if(!data._user || data._user !== currentUser){
+          showToast('⚠️ 数据文件用户不匹配！');
+          return;
+        }
+        // 恢复数据
+        Object.keys(data).forEach(k=>{
+          if(k.startsWith('_')) return;
+          if(k==='history' && data[k]){G.history={...data[k];}
+          else if(k==='weekly' && data[k]){G.weekly={...data[k];}
+          else if(k==='medals' && Array.isArray(data[k])){G.medals=[...data[k]];}
+          else if(k==='myStories' && Array.isArray(data[k])){G.myStories=[...data[k]];}
+          else if(k==='collected' && Array.isArray(data[k])){G.collected=[...data[k]];}
+          else if(k==='ach' && data[k]){G.ach={...G.ach,...data[k]};}
+          else if(k==='tasks' && data[k]){G.tasks={...G.tasks,...data[k]};}
+          else if(k==='habits' && data[k]){G.habits={...G.habits,...data[k]};}
+          else if(typeof data[k]!=='object'){G[k]=data[k];}
+        });
+        repairData();
+        save();
+        initGame();
+        showToast('✅ 数据已恢复！');
+        console.log('[import] 数据已导入恢复');
+      }catch(e){
+        showToast('⚠️ 文件格式错误！');
+        console.error('[import] 解析失败:',e);
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+// 自动备份到 sessionStorage（防丢）
+function autoBackup(){
+  if(!currentUser) return;
+  try{
+    const data = {...G, _backupTime:Date.now()};
+    sessionStorage.setItem('storyGame_backup_'+currentUser, JSON.stringify(data));
+  }catch(e){}
+}
 // 轻量级提示
 function showToast(msg){
   let t=document.getElementById('syncToast');
@@ -2493,6 +2584,18 @@ function initGame(){
     localStorage.removeItem('storyGame_currentAvatar');
   }
   const savedUser=localStorage.getItem('storyGame_currentUser');
+  
+  // 【v11.1】检查 sessionStorage 是否有备份数据
+  const backupData = sessionStorage.getItem('storyGame_backup_'+ACCOUNT_NAME);
+  if(backupData){
+    try{
+      const bd = JSON.parse(backupData);
+      if(bd.history && Object.keys(bd.history).length > 0){
+        console.log('[startup] 发现 sessionStorage 备份数据，history keys=', Object.keys(bd.history).length);
+      }
+    }catch(e){}
+  }
+  
   if(savedUser===ACCOUNT_NAME){
     // 已登录用户 —— 自动进入游戏（页面已通过内联脚本隐藏了登录页）
     currentUser=ACCOUNT_NAME;

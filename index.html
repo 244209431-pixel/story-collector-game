@@ -135,6 +135,10 @@
         <div id="syncStatusPanel" style="padding:12px;margin:12px 0;border-radius:12px;background:rgba(168,85,247,0.05);border:1px solid rgba(168,85,247,0.1)">
           <div style="font-size:14px;color:var(--t2)" id="syncDetailStatus">检查中...</div>
         </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button onclick="exportData()" style="flex:1;padding:12px;border:2px solid var(--border);border-radius:14px;background:var(--card);color:var(--t1);font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;transition:.3s">📤 导出数据</button>
+          <button onclick="importData()" style="flex:1;padding:12px;border:2px solid #4A7CF7;border-radius:14px;background:var(--card);color:#4A7CF7;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;transition:.3s">📥 导入数据</button>
+        </div>
         <button id="btnManualSync" onclick="manualSync()" style="width:100%;padding:14px;border:none;border-radius:14px;background:linear-gradient(135deg,#4A7CF7,#A855F7);color:white;font-size:16px;font-weight:600;font-family:inherit;cursor:pointer;box-shadow:0 4px 15px rgba(74,124,247,0.3);transition:.3s">☁️ 手动同步</button>
         <p style="color:var(--t3);font-size:11px;margin-top:8px">💡 提示：数据每 30 秒自动同步一次，也可以手动点击同步</p>
       </div>
