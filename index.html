@@ -144,6 +144,56 @@
       </div>
     </div>
   </div>
+  <!-- ====== 补录页 ====== -->
+  <div class="page" id="recoveryPage">
+    <div class="page-pad">
+      <div class="card">
+        <h3>📝 数据补录工具</h3>
+        <p style="font-size:13px;color:var(--t3);margin-bottom:12px">补录过去的打卡记录、勋章或故事</p>
+        
+        <div class="recovery-quick-actions">
+          <button class="recovery-btn" onclick="showBatchRecoverDialog()">📅 批量补录</button>
+          <button class="recovery-btn" onclick="showMedalRecoverDialog()">🏅 补录勋章</button>
+          <button class="recovery-btn" onclick="showStoryRecoverDialog()">📖 补录故事</button>
+          <button class="recovery-btn" onclick="document.getElementById('backupFileInput').click()">📂 导入备份</button>
+          <input type="file" id="backupFileInput" accept=".json" style="display:none" onchange="importBackupFile(event)">
+        </div>
+      </div>
+      
+      <div class="card">
+        <h3>📅 补录日历</h3>
+        <div class="recovery-calendar">
+          <div class="calendar-header">
+            <button class="cal-nav-btn" onclick="changeRecoveryMonth(-1)">◀</button>
+            <span id="recMonthYear">2026年 3月</span>
+            <button class="cal-nav-btn" onclick="changeRecoveryMonth(1)">▶</button>
+          </div>
+          <div class="calendar-weekdays">
+            <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+          </div>
+          <div class="calendar-days" id="recCalendarDays"></div>
+        </div>
+      </div>
+      
+      <div class="card">
+        <h3>📊 补录统计</h3>
+        <div class="recovery-stats">
+          <div class="stat-item">
+            <span class="stat-label">已补录天数</span>
+            <span class="stat-value" id="recDayCount">0</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">已补录勋章</span>
+            <span class="stat-value" id="recMedalCount">0</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">已补录故事</span>
+            <span class="stat-value" id="recStoryCount">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div> <!-- /app-container -->
 
 <!-- 底部导航 -->
@@ -151,6 +201,7 @@
   <button class="nav-item active" onclick="switchPage('home',this)"><span class="nav-icon">🏠</span>今日任务</button>
   <button class="nav-item" onclick="switchPage('achieve',this)"><span class="nav-icon">🏆</span>隐藏剧情</button>
   <button class="nav-item" onclick="switchPage('treasure',this)"><span class="nav-icon">🧰</span>成长宝箱</button>
+  <button class="nav-item" onclick="switchPage('recovery',this)"><span class="nav-icon">📝</span>数据补录</button>
 </div>
 
 <!-- 模态框 -->
@@ -172,73 +223,6 @@
 <script src="stories.js"></script>
 <script src="game.js"></script>
 
-  <!-- ===== 【v11.2】数据补录工具页面 ===== -->
-  <div class="page" id="recoveryPage" style="display:none">
-    <div class="recovery-container">
-      <div class="recovery-header">
-        <h2>📝 数据补录工具</h2>
-        <p>补录缺失的打卡记录、勋章和故事</p>
-      </div>
-      
-      <div class="recovery-stats card">
-        <div class="stat-item">
-          <span class="stat-value" id="recDayCount">0</span>
-          <span class="stat-label">已补录天数</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value" id="recMedalCount">0</span>
-          <span class="stat-label">获得勋章</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value" id="recStoryCount">0</span>
-          <span class="stat-label">补录故事</span>
-        </div>
-      </div>
-      
-      <div class="recovery-calendar card">
-        <div class="card-title">📅 日历视图</div>
-        <div class="calendar-header">
-          <button onclick="changeRecoveryMonth(-1)">‹</button>
-          <span id="recMonthYear"></span>
-          <button onclick="changeRecoveryMonth(1)">›</button>
-        </div>
-        <div class="calendar-weekdays">
-          <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
-        </div>
-        <div class="calendar-days" id="recCalendarDays"></div>
-        <div class="recovery-tip">
-          💡 提示：绿色 = 已打卡，白色 = 缺失可补录，点击日期进行补录
-        </div>
-      </div>
-      
-      <div class="recovery-actions card">
-        <div class="card-title">⚡ 快速操作</div>
-        <div class="action-buttons">
-          <button class="action-btn" onclick="showBatchRecoverDialog()">
-            <span class="action-icon">📅</span>
-            <span class="action-label">批量补录</span>
-          </button>
-          <button class="action-btn" onclick="showMedalRecoverDialog()">
-            <span class="action-icon">🏅</span>
-            <span class="action-label">补录勋章</span>
-          </button>
-          <button class="action-btn" onclick="showStoryRecoverDialog()">
-            <span class="action-icon">📖</span>
-            <span class="action-label">补录故事</span>
-          </button>
-          <button class="action-btn" onclick="document.getElementById('importBackupInput').click()">
-            <span class="action-icon">📥</span>
-            <span class="action-label">导入备份</span>
-            <input type="file" id="importBackupInput" accept=".json" style="display:none" onchange="importBackupFile(event)">
-          </button>
-        </div>
-      </div>
-      
-      <button class="btn-finish" onclick="finishRecovery()">
-        ✅ 完成补录，返回游戏
-      </button>
-    </div>
-  </div>
 
   <!-- 补录对话框 -->
   <div class="modal-overlay" id="recoveryDialog" style="display:none">

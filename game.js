@@ -1064,20 +1064,43 @@ async function manualSync(){
 
 
 // ===== 【v11.1】数据导出/导入（防止数据丢失）=====
+// 【v11.2】增强导出功能
 function exportData(){
   if(!currentUser){showToast('请先登录');return;}
-  const data = {...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11'};
+  
+  const now = new Date();
+  const data = {
+    // 元数据
+    exportDate: now.toISOString(),
+    exportDateLocale: now.toLocaleString('zh-CN'),
+    version: 'v11.2',
+    userId: currentUser,
+    
+    // 核心数据（从 G 对象展开）
+    ...G,
+    
+    // 额外元数据
+    _user: currentUser,
+    _avatar: selectedAvatar,
+    _lastSync: Date.now(),
+    _version: 'v11.2'
+  };
+  
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  const today = new Date().toISOString().split('T')[0];
-  a.download = `故事收集家-数据备份-${today}.json`;
+  const today = now.toISOString().split('T')[0];
+  a.download = `故事收集家-备份-${today}.json`;
   a.click();
   URL.revokeObjectURL(url);
-  showToast('✅ 数据已导出！请保存到安全位置');
-  console.log('[export] 数据已导出, history keys=',Object.keys(data.history||{}).length);
+  
+  // 更新最后导出时间
+  localStorage.setItem('storyGame_' + currentUser + '_lastExport', Date.now().toString());
+  
+  showToast('✅ 数据已导出！建议每7天备份一次');
+  console.log('[export] 数据已导出, 大小=', json.length, 'bytes');
 }
 
 function importData(){
@@ -1265,8 +1288,20 @@ function createStars(){
 function switchPage(p,el){
   document.querySelectorAll('.page').forEach(e=>e.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
-  const map={home:'homePage',achieve:'achievePage',treasure:'treasurePage'};
-  document.getElementById(map[p]).classList.add('active');
+  const map={
+    home:'homePage',
+    achieve:'achievePage',
+    treasure:'treasurePage',
+    recovery:'recoveryPage'
+  };
+  const pageId = map[p];
+  if(pageId) {
+    document.getElementById(pageId).classList.add('active');
+    // 如果是补录页面，初始化补录工具
+    if(p === 'recovery') {
+      initRecoveryTool();
+    }
+  }
   if(el)el.classList.add('active');
 }
 
