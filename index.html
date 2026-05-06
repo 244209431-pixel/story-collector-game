@@ -171,5 +171,195 @@
 
 <script src="stories.js"></script>
 <script src="game.js"></script>
+
+  <!-- ===== 【v11.2】数据补录工具页面 ===== -->
+  <div class="page" id="recoveryPage" style="display:none">
+    <div class="recovery-container">
+      <div class="recovery-header">
+        <h2>📝 数据补录工具</h2>
+        <p>补录缺失的打卡记录、勋章和故事</p>
+      </div>
+      
+      <div class="recovery-stats card">
+        <div class="stat-item">
+          <span class="stat-value" id="recDayCount">0</span>
+          <span class="stat-label">已补录天数</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value" id="recMedalCount">0</span>
+          <span class="stat-label">获得勋章</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value" id="recStoryCount">0</span>
+          <span class="stat-label">补录故事</span>
+        </div>
+      </div>
+      
+      <div class="recovery-calendar card">
+        <div class="card-title">📅 日历视图</div>
+        <div class="calendar-header">
+          <button onclick="changeRecoveryMonth(-1)">‹</button>
+          <span id="recMonthYear"></span>
+          <button onclick="changeRecoveryMonth(1)">›</button>
+        </div>
+        <div class="calendar-weekdays">
+          <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
+        </div>
+        <div class="calendar-days" id="recCalendarDays"></div>
+        <div class="recovery-tip">
+          💡 提示：绿色 = 已打卡，白色 = 缺失可补录，点击日期进行补录
+        </div>
+      </div>
+      
+      <div class="recovery-actions card">
+        <div class="card-title">⚡ 快速操作</div>
+        <div class="action-buttons">
+          <button class="action-btn" onclick="showBatchRecoverDialog()">
+            <span class="action-icon">📅</span>
+            <span class="action-label">批量补录</span>
+          </button>
+          <button class="action-btn" onclick="showMedalRecoverDialog()">
+            <span class="action-icon">🏅</span>
+            <span class="action-label">补录勋章</span>
+          </button>
+          <button class="action-btn" onclick="showStoryRecoverDialog()">
+            <span class="action-icon">📖</span>
+            <span class="action-label">补录故事</span>
+          </button>
+          <button class="action-btn" onclick="document.getElementById('importBackupInput').click()">
+            <span class="action-icon">📥</span>
+            <span class="action-label">导入备份</span>
+            <input type="file" id="importBackupInput" accept=".json" style="display:none" onchange="importBackupFile(event)">
+          </button>
+        </div>
+      </div>
+      
+      <button class="btn-finish" onclick="finishRecovery()">
+        ✅ 完成补录，返回游戏
+      </button>
+    </div>
+  </div>
+
+  <!-- 补录对话框 -->
+  <div class="modal-overlay" id="recoveryDialog" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>📝 补录 <span id="recDialogDate"></span></h3>
+        <button class="modal-close" onclick="hideRecoveryDialog()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="recovery-form">
+          <label class="checkbox-label">
+            <input type="checkbox" id="recDialogCheckin">
+            <span>✅ 打卡完成</span>
+          </label>
+          
+          <div class="form-group">
+            <label>获得勋章：</label>
+            <select id="recDialogMedal">
+              <option value="">-- 选择勋章 --</option>
+              <option value="brave">🏅 勇敢勋章</option>
+              <option value="kind">💝 善良勋章</option>
+              <option value="persist">⏳ 坚持勋章</option>
+              <option value="creative">🎨 创意勋章</option>
+              <option value="explorer">🗺️ 探索勋章</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>写故事：</label>
+            <textarea id="recDialogStory" placeholder="记录今天的故事..." rows="3"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" onclick="hideRecoveryDialog()">取消</button>
+        <button class="btn-confirm" onclick="confirmRecovery()">✅ 确认补录</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 批量补录对话框 -->
+  <div class="modal-overlay" id="batchDialog" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>📅 批量补录</h3>
+        <button class="modal-close" onclick="hideBatchDialog()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>开始日期：</label>
+          <input type="date" id="batchStartDate">
+        </div>
+        <div class="form-group">
+          <label>结束日期：</label>
+          <input type="date" id="batchEndDate">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" onclick="hideBatchDialog()">取消</button>
+        <button class="btn-confirm" onclick="confirmBatchRecover()">✅ 确认批量补录</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 勋章补录对话框 -->
+  <div class="modal-overlay" id="medalDialog" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>🏅 补录勋章</h3>
+        <button class="modal-close" onclick="hideMedalDialog()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>选择勋章：</label>
+          <select id="medalSelect">
+            <option value="">-- 选择勋章 --</option>
+            <option value="brave">🏅 勇敢勋章</option>
+            <option value="kind">💝 善良勋章</option>
+            <option value="persist">⏳ 坚持勋章</option>
+            <option value="creative">🎨 创意勋章</option>
+            <option value="explorer">🗺️ 探索勋章</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>获得日期：</label>
+          <input type="date" id="medalDate">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" onclick="hideMedalDialog()">取消</button>
+        <button class="btn-confirm" onclick="confirmMedalRecover()">✅ 确认补录</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 故事补录对话框 -->
+  <div class="modal-overlay" id="storyDialog" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>📖 补录故事</h3>
+        <button class="modal-close" onclick="hideStoryDialog()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>故事标题：</label>
+          <input type="text" id="storyTitleInput" placeholder="给故事起个名字...">
+        </div>
+        <div class="form-group">
+          <label>故事内容：</label>
+          <textarea id="storyTextInput" placeholder="写下今天的故事..." rows="5"></textarea>
+        </div>
+        <div class="form-group">
+          <label>创作日期：</label>
+          <input type="date" id="storyDateInput">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" onclick="hideStoryDialog()">取消</button>
+        <button class="btn-confirm" onclick="confirmStoryRecover()">✅ 确认补录</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

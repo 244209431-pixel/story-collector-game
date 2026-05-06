@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>📝 数据补录工具 - UI 草图</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 16px;
+      color: #1a1a2e;
+    }
+    
+    .container {
+      max-width: 420px;
+      margin: 0 auto;
+    }
+    
+    /* 标题区 */
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+      color: white;
+    }
+    
+    .header h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    .header p {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    
+    /* 卡片 */
+    .card {
+      background: white;
+      border-radius: 20px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    }
+    
+    .card-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    /* 日历视图 */
+    .calendar {
+      width: 100%;
+    }
+    
+    .calendar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    
+    .calendar-header button {
+      background: #f0f0f0;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    
+    .calendar-header span {
+      font-weight: 600;
+      font-size: 16px;
+    }
+    
+    .calendar-weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+    
+    .calendar-weekdays div {
+      text-align: center;
+      font-size: 12px;
+      color: #999;
+      padding: 8px 0;
+    }
+    
+    .calendar-days {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+    
+    .calendar-day {
+      aspect-ratio: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 2px solid transparent;
+    }
+    
+    .calendar-day.empty {
+      cursor: default;
+    }
+    
+    .calendar-day.has-data {
+      background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+      color: #1a1a2e;
+      font-weight: 600;
+    }
+    
+    .calendar-day.no-data {
+      background: #f5f5f5;
+      color: #999;
+    }
+    
+    .calendar-day.today {
+      border-color: #667eea;
+    }
+    
+    .calendar-day.selected {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      transform: scale(1.05);
+    }
+    
+    .calendar-day .icon {
+      font-size: 10px;
+      margin-top: 2px;
+    }
+    
+    /* 补录对话框（模拟） */
+    .mockup-dialog {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 20px;
+    }
+    
+    .mockup-dialog.hidden {
+      display: none;
+    }
+    
+    .dialog-content {
+      background: white;
+      border-radius: 20px;
+      padding: 24px;
+      width: 100%;
+      max-width: 380px;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    
+    .dialog-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+    
+    .dialog-section {
+      margin-bottom: 16px;
+    }
+    
+    .dialog-section label {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #555;
+    }
+    
+    .dialog-section input[type="date"] {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 12px;
+      font-size: 16px;
+      font-family: inherit;
+    }
+    
+    .checkbox-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: #f9f9f9;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    
+    .checkbox-item input {
+      width: 18px;
+      height: 18px;
+    }
+    
+    .dialog-buttons {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    
+    .btn-cancel {
+      flex: 1;
+      padding: 14px;
+      border: 2px solid #e0e0e0;
+      border-radius: 12px;
+      background: white;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    
+    .btn-save {
+      flex: 1;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    
+    /* 快速操作区 */
+    .quick-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    
+    .quick-action-btn {
+      padding: 16px;
+      border: 2px solid #e0e0e0;
+      border-radius: 16px;
+      background: white;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s;
+    }
+    
+    .quick-action-btn:hover {
+      border-color: #667eea;
+      background: #f8f9ff;
+    }
+    
+    .quick-action-btn .icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+    }
+    
+    .quick-action-btn .label {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1a1a2e;
+    }
+    
+    /* 补录统计 */
+    .stats {
+      display: flex;
+      justify-content: space-around;
+      padding: 16px;
+      background: linear-gradient(135deg, #f8f9ff 0%, #fff5f8 100%);
+      border-radius: 16px;
+      margin-bottom: 16px;
+    }
+    
+    .stat-item {
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: #667eea;
+    }
+    
+    .stat-label {
+      font-size: 12px;
+      color: #999;
+      margin-top: 4px;
+    }
+    
+    /* 提示 */
+    .tip {
+      background: #fff9e6;
+      border-left: 4px solid #ffc107;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 16px;
+    }
+    
+    /* 完成按钮 */
+    .btn-finish {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+      color: white;
+      font-size: 18px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(17, 153, 142, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- 标题区 -->
+    <div class="header">
+      <h1>📝 数据补录工具</h1>
+      <p>补录缺失的打卡记录、勋章和故事</p>
+    </div>
+    
+    <!-- 补录统计 -->
+    <div class="card">
+      <div class="stats">
+        <div class="stat-item">
+          <div class="stat-value">15</div>
+          <div class="stat-label">已补录天数</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">3</div>
+          <div class="stat-label">获得勋章</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">2</div>
+          <div class="stat-label">补录故事</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 日历视图 -->
+    <div class="card">
+      <div class="card-title">📅 日历视图</div>
+      
+      <div class="calendar">
+        <div class="calendar-header">
+          <button>‹</button>
+          <span>2026年4月</span>
+          <button>›</button>
+        </div>
+        
+        <div class="calendar-weekdays">
+          <div>日</div>
+          <div>一</div>
+          <div>二</div>
+          <div>三</div>
+          <div>四</div>
+          <div>五</div>
+          <div>六</div>
+        </div>
+        
+        <div class="calendar-days">
+          <!-- 4月数据示例 -->
+          <div class="calendar-day empty"></div>
+          <div class="calendar-day empty"></div>
+          <div class="calendar-day empty"></div>
+          <div class="calendar-day empty"></div>
+          <div class="calendar-day empty"></div>
+          <div class="calendar-day empty"></div>
+          <div class="calendar-day no-data">1</div>
+          <div class="calendar-day has-data">2<span class="icon">✅</span></div>
+          <div class="calendar-day has-data">3<span class="icon">✅</span></div>
+          <div class="calendar-day no-data">4</div>
+          <div class="calendar-day no-data">5</div>
+          <div class="calendar-day has-data">6<span class="icon">✅</span></div>
+          <div class="calendar-day selected">7<span class="icon">✅🏅</span></div>
+          <div class="calendar-day no-data">8</div>
+          <div class="calendar-day no-data">9</div>
+          <div class="calendar-day no-data">10</div>
+          <div class="calendar-day has-data">11<span class="icon">✅</span></div>
+          <div class="calendar-day has-data">12<span class="icon">✅</span></div>
+          <div class="calendar-day no-data">13</div>
+          <div class="calendar-day no-data">14</div>
+          <div class="calendar-day no-data">15</div>
+          <div class="calendar-day no-data">16</div>
+          <div class="calendar-day today">17<span class="icon">✅📖</span></div>
+          <div class="calendar-day no-data">18</div>
+          <div class="calendar-day no-data">19</div>
+          <div class="calendar-day no-data">20</div>
+          <div class="calendar-day no-data">21</div>
+          <div class="calendar-day no-data">22</div>
+          <div class="calendar-day no-data">23</div>
+          <div class="calendar-day no-data">24</div>
+          <div class="calendar-day no-data">25</div>
+          <div class="calendar-day no-data">26</div>
+          <div class="calendar-day no-data">27</div>
+          <div class="calendar-day no-data">28</div>
+          <div class="calendar-day no-data">29</div>
+          <div class="calendar-day no-data">30</div>
+        </div>
+      </div>
+      
+      <div class="tip">
+        💡 提示：绿色 = 已打卡，白色 = 缺失可补录，点击日期进行补录
+      </div>
+    </div>
+    
+    <!-- 快速操作 -->
+    <div class="card">
+      <div class="card-title">⚡ 快速操作</div>
+      
+      <div class="quick-actions">
+        <div class="quick-action-btn" onclick="alert('打开批量补录对话框')">
+          <div class="icon">📅</div>
+          <div class="label">批量补录</div>
+        </div>
+        
+        <div class="quick-action-btn" onclick="alert('打开勋章补录对话框')">
+          <div class="icon">🏅</div>
+          <div class="label">补录勋章</div>
+        </div>
+        
+        <div class="quick-action-btn" onclick="alert('打开故事补录对话框')">
+          <div class="icon">📖</div>
+          <div class="label">补录故事</div>
+        </div>
+        
+        <div class="quick-action-btn" onclick="alert('导入备份文件')">
+          <div class="icon">📥</div>
+          <div class="label">导入备份</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 完成按钮 -->
+    <button class="btn-finish" onclick="alert('补录完成！即将跳转到主页面...')">
+      ✅ 完成补录，返回游戏
+    </button>
+  </div>
+  
+  <!-- 补录对话框（模拟） -->
+  <div class="mockup-dialog" id="mockDialog">
+    <div class="dialog-content">
+      <div class="dialog-title">📝 补录 4月7日 的数据</div>
+      
+      <div class="dialog-section">
+        <label>📅 日期</label>
+        <input type="date" value="2026-04-07" disabled>
+      </div>
+      
+      <div class="dialog-section">
+        <label>✅ 打卡确认</label>
+        <div class="checkbox-group">
+          <label class="checkbox-item">
+            <input type="checkbox" checked>
+            完成打卡
+          </label>
+        </div>
+      </div>
+      
+      <div class="dialog-section">
+        <label>🏅 获得勋章（可选）</label>
+        <div class="checkbox-group">
+          <label class="checkbox-item">
+            <input type="checkbox" checked>
+            🌟 勇敢勋章
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox">
+            📚 阅读勋章
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox">
+            🎨 创作勋章
+          </label>
+        </div>
+      </div>
+      
+      <div class="dialog-section">
+        <label>📖 写故事（可选）</label>
+        <div class="checkbox-group">
+          <label class="checkbox-item">
+            <input type="checkbox" checked>
+            今天写了故事
+          </label>
+        </div>
+        <p style="font-size: 12px; color: #999; margin-top: 8px;">
+          故事标题：珊瑚王国的冒险<br>
+          故事内容：（略）
+        </p>
+      </div>
+      
+      <div class="dialog-buttons">
+        <button class="btn-cancel" onclick="document.getElementById('mockDialog').classList.add('hidden')">
+          取消
+        </button>
+        <button class="btn-save" onclick="alert('保存成功！'); document.getElementById('mockDialog').classList.add('hidden')">
+          保存
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // 点击日历日期打开对话框
+    document.querySelectorAll('.calendar-day:not(.empty)').forEach(day => {
+      day.addEventListener('click', function() {
+        document.getElementById('mockDialog').classList.remove('hidden');
+      });
+    });
+    
+    // 关闭对话框
+    document.getElementById('mockDialog').addEventListener('click', function(e) {
+      if (e.target === this) {
+        this.classList.add('hidden');
+      }
+    });
+  </script>
+</body>
+</html>

@@ -65,6 +65,137 @@ const MEDAL_LIST = [
   { icon:'🏅', title:'不朽传说', desc:'二十周以上！你已经超越了传说！' },
 ];
 
+// ===== 【v11.2】IndexedDB 持久备份系统 =====
+const IDB_NAME = 'StoryGameDB';
+const IDB_VERSION = 1;
+const IDB_STORE = 'backups';
+
+// 打开 IndexedDB 数据库
+function openIDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(IDB_NAME, IDB_VERSION);
+    
+    request.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        const store = db.createObjectStore(IDB_STORE, { keyPath: ['userId', 'timestamp'] });
+        store.createIndex('userId', 'userId', { unique: false });
+        store.createIndex('timestamp', 'timestamp', { unique: false });
+      }
+    };
+    
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 保存备份到 IndexedDB
+async function saveToIDB(userId, data) {
+  try {
+    const db = await openIDB();
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    const store = tx.objectStore(IDB_STORE);
+    
+    const backup = {
+      userId: userId,
+      timestamp: Date.now(),
+      date: new Date().toISOString().split('T')[0],
+      data: { ...data, _backup: true }
+    };
+    
+    await store.put(backup);
+    await cleanupOldBackups(userId, 7);
+    
+    console.log('[IndexedDB] 备份保存成功:', backup.date);
+    return true;
+  } catch (e) {
+    console.error('[IndexedDB] 备份失败:', e);
+    return false;
+  }
+}
+
+// 从 IndexedDB 恢复最新备份
+async function restoreFromIDB(userId) {
+  try {
+    const db = await openIDB();
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const store = tx.objectStore(IDB_STORE);
+    const index = store.index('userId');
+    
+    const backups = [];
+    return new Promise((resolve, reject) => {
+      index.getAll(userId).onsuccess = (e) => {
+        const results = e.target.result;
+        if (results && results.length > 0) {
+          // 按时间戳降序排列，取最新
+          results.sort((a, b) => b.timestamp - a.timestamp);
+          console.log('[IndexedDB] 找到', results.length, '个备份，最新:', new Date(results[0].timestamp).toLocaleString());
+          resolve(results[0].data);
+        } else {
+          console.log('[IndexedDB] 无备份数据');
+          resolve(null);
+        }
+      };
+      index.getAll(userId).onerror = () => reject(new Error('读取备份失败'));
+    });
+  } catch (e) {
+    console.error('[IndexedDB] 恢复失败:', e);
+    return null;
+  }
+}
+
+// 清理旧备份（保留最近 N 天）
+async function cleanupOldBackups(userId, keepDays) {
+  try {
+    const db = await openIDB();
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    const store = tx.objectStore(IDB_STORE);
+    
+    const cutoff = Date.now() - (keepDays * 24 * 60 * 60 * 1000);
+    const index = store.index('userId');
+    
+    return new Promise((resolve) => {
+      index.getAll(userId).onsuccess = (e) => {
+        const results = e.target.result;
+        let deleted = 0;
+        results.forEach(backup => {
+          if (backup.timestamp < cutoff) {
+            store.delete([backup.userId, backup.timestamp]);
+            deleted++;
+          }
+        });
+        if (deleted > 0) {
+          console.log('[IndexedDB] 清理了', deleted, '个旧备份');
+        }
+        resolve();
+      };
+    });
+  } catch (e) {
+    console.error('[IndexedDB] 清理失败:', e);
+  }
+}
+
+// 获取所有备份列表（用于调试）
+async function listIDBBackups(userId) {
+  try {
+    const db = await openIDB();
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const index = tx.objectStore(IDB_STORE).index('userId');
+    
+    return new Promise((resolve) => {
+      index.getAll(userId).onsuccess = (e) => {
+        const results = e.target.result || [];
+        results.sort((a, b) => b.timestamp - a.timestamp);
+        resolve(results);
+      };
+    });
+  } catch (e) {
+    return [];
+  }
+}
+
+// ===== IndexedDB 封装结束 =====
+
 // ===== 生成一个干净的默认状态 =====
 function makeDefaultState(){
   return {
@@ -215,7 +346,18 @@ function load(){
   // 只有本地有数据时才立刻保存；首次加载时等云端恢复后再保存（避免空数据覆盖云端）
   if(!isFirstLoad){
     save();
+  
+  // 【v11.2】检查是否需要提醒导出备份
+  const lastExport = localStorage.getItem(SYNC_STORAGE_PREFIX + currentUser + '_lastExport');
+  if (lastExport) {
+    const daysSinceExport = (Date.now() - parseInt(lastExport)) / (1000 * 60 * 60 * 24);
+    if (daysSinceExport >= 7) {
+      if (confirm('📤 距离上次导出备份已超过 7 天。\n\n建议现在导出备份吗？')) {
+        exportData();
+      }
+    }
   }
+}
 }
 
 // ===== 跨天处理（独立函数，逻辑清晰） =====
@@ -957,8 +1099,8 @@ function importData(){
         // 恢复数据
         Object.keys(data).forEach(k=>{
           if(k.startsWith('_')) return;
-          if(k==='history' && data[k]){G.history={...data[k];}
-          else if(k==='weekly' && data[k]){G.weekly={...data[k];}
+          if(k==='history' && data[k]){Object.assign(G.history, data[k]);}
+          else if(k==='weekly' && data[k]){Object.assign(G.weekly, data[k]);}
           else if(k==='medals' && Array.isArray(data[k])){G.medals=[...data[k]];}
           else if(k==='myStories' && Array.isArray(data[k])){G.myStories=[...data[k]];}
           else if(k==='collected' && Array.isArray(data[k])){G.collected=[...data[k]];}
@@ -2660,3 +2802,418 @@ function initGame(){
     if(e.key==='Enter')doLogin();
   });
 })();
+// ===== 【v11.2】数据补录工具 =====
+
+// 补录工具状态
+let recoveryDate = new Date();
+
+// 初始化补录工具
+function initRecoveryTool() {
+  console.log('[补录] 初始化补录工具');
+  recoveryDate = new Date();
+  renderRecoveryCalendar();
+  updateRecoveryStats();
+}
+
+// 切换月份
+function changeRecoveryMonth(delta) {
+  recoveryDate.setMonth(recoveryDate.getMonth() + delta);
+  renderRecoveryCalendar();
+}
+
+// 渲染补录日历
+function renderRecoveryCalendar() {
+  const year = recoveryDate.getFullYear();
+  const month = recoveryDate.getMonth();
+  
+  const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', 
+                      '7月', '8月', '9月', '10月', '11月', '12月'];
+  document.getElementById('recMonthYear').textContent = year + '年 ' + monthNames[month];
+  
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date();
+  
+  const calendarDays = document.getElementById('recCalendarDays');
+  calendarDays.innerHTML = '';
+  
+  // 填充空白
+  for (let i = 0; i < firstDay; i++) {
+    const empty = document.createElement('div');
+    empty.className = 'calendar-day empty';
+    calendarDays.appendChild(empty);
+  }
+  
+  // 填充日期
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    const dayDate = new Date(year, month, d);
+    const isFuture = dayDate > today;
+    const isToday = dayDate.toDateString() === today.toDateString();
+    
+    const dayDiv = document.createElement('div');
+    dayDiv.className = 'calendar-day';
+    
+    const hasRecord = G.history && G.history[dayDate.toDateString()];
+    const isDone = hasRecord && hasRecord.done === true;
+    
+    if (isFuture && !isToday) {
+      dayDiv.classList.add('future');
+      dayDiv.textContent = d;
+    } else if (isDone) {
+      dayDiv.classList.add('done');
+      dayDiv.innerHTML = '<span class="day-num">' + d + '</span><span class="day-icon">✅</span>';
+    } else if (isToday && Object.values(G.tasks).every(v => v)) {
+      dayDiv.classList.add('today-done');
+      dayDiv.innerHTML = '<span class="day-num">' + d + '</span><span class="day-icon">✅</span>';
+    } else {
+      dayDiv.classList.add('missing');
+      dayDiv.innerHTML = '<span class="day-num">' + d + '</span>';
+      dayDiv.onclick = (function(date) {
+        return function() { showRecoveryDialog(date); };
+      })(dayDate);
+    }
+    
+    calendarDays.appendChild(dayDiv);
+  }
+}
+
+// 显示补录对话框
+function showRecoveryDialog(date) {
+  const dateStr = date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+  document.getElementById('recDialogDate').textContent = dateStr;
+  document.getElementById('recDialogDate').dataset.date = date.toDateString();
+  
+  document.getElementById('recDialogCheckin').checked = false;
+  document.getElementById('recDialogMedal').value = '';
+  document.getElementById('recDialogStory').value = '';
+  
+  document.getElementById('recoveryDialog').style.display = 'flex';
+}
+
+// 隐藏补录对话框
+function hideRecoveryDialog() {
+  document.getElementById('recoveryDialog').style.display = 'none';
+}
+
+// 确认补录
+function confirmRecovery() {
+  const dateStr = document.getElementById('recDialogDate').dataset.date;
+  const isCheckin = document.getElementById('recDialogCheckin').checked;
+  const medal = document.getElementById('recDialogMedal').value;
+  const story = document.getElementById('recDialogStory').value.trim();
+  
+  if (!isCheckin && !medal && !story) {
+    alert('请至少选择一项补录内容！');
+    return;
+  }
+  
+  if (isCheckin) {
+    if (!G.history) G.history = {};
+    G.history[dateStr] = { done: true, date: dateStr };
+    console.log('[补录] 打卡记录:', dateStr);
+  }
+  
+  if (medal) {
+    if (!G.medals) G.medals = [];
+    const medalInfo = {
+      'brave': { title: '勇敢勋章', icon: '🏅', desc: '完成一次勇敢的挑战' },
+      'kind': { title: '善良勋章', icon: '💝', desc: '帮助他人一次' },
+      'persist': { title: '坚持勋章', icon: '⏳', desc: '连续打卡7天' },
+      'creative': { title: '创意勋章', icon: '🎨', desc: '创作一个故事' },
+      'explorer': { title: '探索勋章', icon: '🗺️', desc: '探索新领域' }
+    };
+    
+    if (medalInfo[medal]) {
+      G.medals.push({
+        title: medalInfo[medal].title,
+        icon: medalInfo[medal].icon,
+        desc: medalInfo[medal].desc,
+        date: dateStr,
+        weekId: getWeekId(new Date(dateStr))
+      });
+      console.log('[补录] 勋章:', medalInfo[medal].title);
+    }
+  }
+  
+  if (story) {
+    if (!G.myStories) G.myStories = [];
+    G.myStories.push({
+      title: story.substring(0, 20) + (story.length > 20 ? '...' : ''),
+      text: story,
+      date: dateStr
+    });
+    console.log('[补录] 故事:', story.substring(0, 20));
+  }
+  
+  save();
+  hideRecoveryDialog();
+  renderRecoveryCalendar();
+  updateRecoveryStats();
+  
+  alert('✅ 补录成功！');
+}
+
+// 更新补录统计
+function updateRecoveryStats() {
+  let dayCount = 0;
+  let medalCount = 0;
+  let storyCount = 0;
+  
+  if (G.history) {
+    dayCount = Object.keys(G.history).filter(k => G.history[k].done).length;
+  }
+  if (G.medals) {
+    medalCount = G.medals.length;
+  }
+  if (G.myStories) {
+    storyCount = G.myStories.length;
+  }
+  
+  document.getElementById('recDayCount').textContent = dayCount;
+  document.getElementById('recMedalCount').textContent = medalCount;
+  document.getElementById('recStoryCount').textContent = storyCount;
+}
+
+// 显示批量补录对话框
+function showBatchRecoverDialog() {
+  document.getElementById('batchDialog').style.display = 'flex';
+}
+
+// 确认批量补录
+function confirmBatchRecover() {
+  const startDate = document.getElementById('batchStartDate').value;
+  const endDate = document.getElementById('batchEndDate').value;
+  
+  if (!startDate || !endDate) {
+    alert('请选择开始和结束日期！');
+    return;
+  }
+  
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  
+  if (start > end) {
+    alert('开始日期不能晚于结束日期！');
+    return;
+  }
+  
+  if (!G.history) G.history = {};
+  
+  const current = new Date(start);
+  let count = 0;
+  while (current <= end) {
+    const dateStr = current.toDateString();
+    G.history[dateStr] = { done: true, date: dateStr };
+    count++;
+    current.setDate(current.getDate() + 1);
+  }
+  
+  save();
+  hideBatchDialog();
+  renderRecoveryCalendar();
+  updateRecoveryStats();
+  
+  alert('✅ 批量补录成功！共补录 ' + count + ' 天');
+}
+
+// 隐藏批量补录对话框
+function hideBatchDialog() {
+  document.getElementById('batchDialog').style.display = 'none';
+}
+
+// 显示勋章补录对话框
+function showMedalRecoverDialog() {
+  document.getElementById('medalDialog').style.display = 'flex';
+}
+
+// 确认勋章补录
+function confirmMedalRecover() {
+  const medal = document.getElementById('medalSelect').value;
+  const date = document.getElementById('medalDate').value;
+  
+  if (!medal || !date) {
+    alert('请选择勋章和日期！');
+    return;
+  }
+  
+  if (!G.medals) G.medals = [];
+  
+  const medalInfo = {
+    'brave': { title: '勇敢勋章', icon: '🏅', desc: '完成一次勇敢的挑战' },
+    'kind': { title: '善良勋章', icon: '💝', desc: '帮助他人一次' },
+    'persist': { title: '坚持勋章', icon: '⏳', desc: '连续打卡7天' },
+    'creative': { title: '创意勋章', icon: '🎨', desc: '创作一个故事' },
+    'explorer': { title: '探索勋章', icon: '🗺️', desc: '探索新领域' }
+  };
+  
+  if (medalInfo[medal]) {
+    G.medals.push({
+      title: medalInfo[medal].title,
+      icon: medalInfo[medal].icon,
+      desc: medalInfo[medal].desc,
+      date: new Date(date).toDateString(),
+      weekId: getWeekId(new Date(date))
+    });
+    
+    save();
+    hideMedalDialog();
+    updateRecoveryStats();
+    
+    alert('✅ 勋章补录成功！');
+  }
+}
+
+// 隐藏勋章补录对话框
+function hideMedalDialog() {
+  document.getElementById('medalDialog').style.display = 'none';
+}
+
+// 显示故事补录对话框
+function showStoryRecoverDialog() {
+  document.getElementById('storyDialog').style.display = 'flex';
+}
+
+// 确认故事补录
+function confirmStoryRecover() {
+  const title = document.getElementById('storyTitleInput').value.trim();
+  const text = document.getElementById('storyTextInput').value.trim();
+  const date = document.getElementById('storyDateInput').value;
+  
+  if (!title || !text || !date) {
+    alert('请填写完整信息！');
+    return;
+  }
+  
+  if (!G.myStories) G.myStories = [];
+  
+  G.myStories.push({
+    title: title,
+    text: text,
+    date: new Date(date).toDateString()
+  });
+  
+  save();
+  hideStoryDialog();
+  updateRecoveryStats();
+  
+  alert('✅ 故事补录成功！');
+}
+
+// 隐藏故事补录对话框
+function hideStoryDialog() {
+  document.getElementById('storyDialog').style.display = 'none';
+}
+
+// 导入备份文件
+function importBackupFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      
+      if (!data.history && !data.medals && !data.myStories) {
+        alert('❌ 备份文件格式不正确！');
+        return;
+      }
+      
+      if (data.history) {
+        if (!G.history) G.history = {};
+        Object.assign(G.history, data.history);
+      }
+      if (data.medals) {
+        if (!G.medals) G.medals = [];
+        G.medals = G.medals.concat(data.medals);
+      }
+      if (data.myStories) {
+        if (!G.myStories) G.myStories = [];
+        G.myStories = G.myStories.concat(data.myStories);
+      }
+      
+      save();
+      renderRecoveryCalendar();
+      updateRecoveryStats();
+      
+      alert('✅ 备份导入成功！');
+    } catch (err) {
+      alert('❌ 文件解析失败：' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  
+  event.target.value = '';
+}
+
+// 完成补录
+function finishRecovery() {
+  repairData();
+  save();
+  
+  showPage('homePage');
+  
+  renderGems();
+  renderTasks();
+  renderStoryProg();
+  renderAch();
+  renderMedals();
+  renderTreasure();
+  
+  alert('✅ 补录完成！已返回主页');
+}
+
+// 处理 ?mode=recovery URL 参数
+function checkRecoveryMode() {
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('mode') === 'recovery') {
+    console.log('[补录] 检测到 recovery 模式，显示补录工具');
+    showPage('recoveryPage');
+    initRecoveryTool();
+  }
+}
+
+console.log('[v11.2] 数据补录工具已加载');
+// ===== 【v11.2】启动时恢复引导 =====
+
+// 检查并提示恢复备份
+async function checkAndPromptRestore() {
+  if (!currentUser) return;
+  
+  // 先检查 IndexedDB 是否有备份
+  const idbData = await restoreFromIDB(currentUser);
+  
+  if (idbData && idbData.history && Object.keys(idbData.history).length > 0) {
+    const backupDate = idbData.date || '未知日期';
+    const dayCount = Object.keys(idbData.history).filter(k => idbData.history[k].done).length;
+    const medalCount = idbData.medals ? idbData.medals.length : 0;
+    const storyCount = idbData.myStories ? idbData.myStories.length : 0;
+    
+    // 显示恢复提示
+    const message = `📂 发现备份数据（${backupDate}）\n\n` +
+                   `包含：\n` +
+                   `• ${dayCount} 天打卡记录\n` +
+                   `• ${medalCount} 枚勋章\n` +
+                   `• ${storyCount} 个故事\n\n` +
+                   `是否恢复这些备份数据？\n` +
+                   `（选择"取消"将从云端恢复或手动补录）`;
+    
+    if (confirm(message)) {
+      // 用户选择恢复备份
+      console.log('[恢复] 用户选择恢复 IndexedDB 备份');
+      // 数据已经在 load() 中恢复了，这里只需要提示
+      alert('✅ 备份数据已恢复！\n\n您可以进入补录工具继续补充数据。');
+    } else {
+      // 用户选择不恢复，尝试从云端恢复
+      console.log('[恢复] 用户选择不恢复备份，尝试云端恢复');
+      // load() 函数中已经会尝试云端恢复
+    }
+  } else {
+    console.log('[恢复] 未找到 IndexedDB 备份');
+    // 未找到备份，正常继续（load() 会处理）
+  }
+}
+
+console.log('[v11.2] 启动恢复引导功能已加载');
+
