@@ -40,6 +40,97 @@ function hasGitHubToken() {
   return token && token.length > 0;
 }
 
+// ===== Gist ID 管理 =====
+function saveGistId(user, gistId) {
+  localStorage.setItem('storyGame_gistId_' + user, gistId);
+  console.log('[Gist] ID 已保存, user=', user, ', id=', gistId);
+}
+
+function getGistId(user) {
+  return localStorage.getItem('storyGame_gistId_' + user) || '';
+}
+
+function clearGistId(user) {
+  localStorage.removeItem('storyGame_gistId_' + user);
+  console.log('[Gist] ID 已清除, user=', user);
+}
+
+// ===== 【新增】自动发现 Gist =====
+async function discoverGist() {
+  const token = getGitHubToken();
+  if (!token) {
+    console.warn('[discoverGist] 未配置 Token');
+    return null;
+  }
+  
+  try {
+    console.log('[discoverGist] 开始搜索用户的 Gist...');
+    const resp = await fetch(`${GITHUB_API}/gists`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+    
+    if (!resp.ok) {
+      console.error('[discoverGist] 获取 Gist 列表失败:', resp.status);
+      return null;
+    }
+    
+    const gists = await resp.json();
+    console.log('[discoverGist] 找到', gists.length, '个 Gist');
+    
+    // 查找描述匹配的 Gist
+    const targetDesc = GIST_DESC_PREFIX + currentUser;
+    const found = gists.find(g => g.description === targetDesc);
+    
+    if (found) {
+      console.log('[discoverGist] ✅ 自动发现 Gist:', found.id);
+      saveGistId(currentUser, found.id);
+      return found.id;
+    } else {
+      console.log('[discoverGist] 未找到匹配的 Gist，将创建新的');
+      return null;
+    }
+  } catch(e) {
+    console.error('[discoverGist] ❌ 搜索失败:', e.message);
+    return null;
+  }
+}
+
+// ===== 【新增】手动保存 Gist ID =====
+function saveGistIdManual() {
+  const input = document.getElementById('manualGistIdInput');
+  const statusEl = document.getElementById('gistIdStatus');
+  if (!input || !statusEl) return;
+  
+  const gistId = input.value.trim();
+  if (!gistId) {
+    statusEl.style.color = '#EF4444';
+    statusEl.textContent = '⚠️ 请输入 Gist ID';
+    return;
+  }
+  
+  // 简单验证 Gist ID 格式（GitHub Gist ID 是 32 位十六进制字符串）
+  if (!/^[a-f0-9]{32}$/.test(gistId)) {
+    statusEl.style.color = '#EF4444';
+    statusEl.textContent = '⚠️ Gist ID 格式不正确（应为 32 位十六进制字符串）';
+    return;
+  }
+  
+  saveGistId(currentUser, gistId);
+  statusEl.style.color = '#10B981';
+  statusEl.textContent = '✅ Gist ID 已保存（' + gistId.substring(0, 8) + '...）';
+  
+  // 清空输入框
+  input.value = '';
+  
+  // 刷新同步状态
+  updateSyncUI('done');
+  
+  console.log('[Manual] Gist ID 已手动保存:', gistId);
+}
+
 // ===== Token UI 函数（供设置页面调用）=====
 function saveGitHubToken() {
   const input = document.getElementById('githubTokenInput');
@@ -832,7 +923,13 @@ async function cloudSave(data){
     }
 
     updateSyncUI('syncing');
-    const gistId = getGistId(currentUser);
+    
+    // 【修复】先尝试获取 gistId（从 localStorage 或自动发现）
+    let gistId = getGistId(currentUser);
+    if (!gistId) {
+      console.log('[cloudSave] 无 gistId，尝试自动发现...');
+      gistId = await discoverGist();
+    }
     
     // 构造 Gist API 请求体
     const fileName = GIST_FILENAME;
@@ -921,7 +1018,15 @@ async function cloudLoad(){
     }
 
     updateSyncUI('syncing');
-    const gistId = getGistId(currentUser);
+    
+    // 【修复】先尝试从 localStorage 获取 gistId
+    let gistId = getGistId(currentUser);
+    
+    // 如果 localStorage 中没有，尝试自动发现
+    if (!gistId) {
+      console.log('[cloudLoad] localStorage 中无 gistId，尝试自动发现...');
+      gistId = await discoverGist();
+    }
     
     if(!gistId){
       console.log('[cloudLoad] 无 gistId，跳过云端加载');
