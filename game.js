@@ -2021,7 +2021,20 @@ function showHistoryDetail(dateStr){
   ${habitsHtml?`<div class="history-section">
     <h4>⭐ 行为习惯</h4>
     ${habitsHtml}
-  </div>`:''}`;
+  </div>`:''}
+  
+  ${hist.story?`<div class="history-section">
+    <h4>📖 今日故事</h4>
+    <div style="padding:12px 16px;border-radius:12px;background:rgba(255,255,255,0.6);line-height:1.8;font-size:14px;color:var(--t2)">${hist.story}</div>
+  </div>`:''}
+  
+  <div style="text-align:center;margin-top:16px">
+    <button class="btn" style="background:linear-gradient(135deg,var(--pink),var(--purple));color:white;border:none;padding:10px 24px;border-radius:12px;font-size:14px;cursor:pointer" onclick="closeHistoryPanel()">✅ 关闭</button>
+  </div>
+</div>`;
+  
+  // 滚动到面板位置
+  panel.scrollTop=0;
 }
 
 function closeHistoryPanel(){
@@ -2250,7 +2263,11 @@ function renderStoryProg(){
   bar.innerHTML='';
   for(let i=0;i<total;i++){const d=document.createElement('div');d.className='sp-slot'+(i<done?' on':'');bar.appendChild(d)}
   const btn=document.getElementById('btnUnlock'),tt=document.getElementById('storyTitle'),pv=document.getElementById('storyPreview');
-  const alreadyUnlocked=hasTodayStory();
+  // 【修复】检查今天是否真的打卡了（history 中有今天的记录且 allDone=true）
+  const todayStr=new Date().toLocaleDateString('zh-CN');
+  const todayHistory=G.history&&G.history[todayStr];
+  const todayAllDone=todayHistory&&todayHistory.allDone===true;
+  const alreadyUnlocked=hasTodayStory() && todayAllDone;
   if(alreadyUnlocked){
     btn.disabled=false;btn.textContent='📖 重新阅读今日故事';
     tt.textContent='✅ 今日故事已解锁！';
