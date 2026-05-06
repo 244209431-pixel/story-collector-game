@@ -157,7 +157,8 @@ function saveGitHubToken() {
   // 清空输入框（安全考虑）
   input.value = '';
   
-  // 刷新同步状态
+  // 【修复】刷新 Token 状态和同步状态
+  loadGitHubToken();  // 刷新 Token 显示
   updateSyncUI('done');
   
   console.log('[Token] Token 已保存');
