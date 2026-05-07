@@ -1685,6 +1685,40 @@ function doLogout(){
   }
 }
 
+// ===== 清除所有打卡数据（重新开始）=====
+function clearAllCheckInData(){
+  if(!confirm('⚠️ 确定要清除所有打卡数据吗？\n\n这将删除：\n• 所有打卡历史记录\n• 所有补打卡记录\n• 收集的故事和宝石\n• 勋章和成就\n• 云端同步的数据\n\n此操作不可逆！'))return;
+  if(!confirm('🔴 再次确认：真的要清除全部数据重新开始吗？'))return;
+  
+  // 1. 重置本地状态
+  G = makeDefaultState();
+  G.date = new Date().toDateString();
+  
+  // 2. 清除 localStorage 中的用户数据
+  const key = SYNC_STORAGE_PREFIX + currentUser;
+  localStorage.removeItem(key);
+  
+  // 3. 保存空状态到本地
+  save();
+  
+  // 4. 同步空数据到云端（清除云端打卡记录）
+  if(hasGitHubToken()){
+    cloudSave({...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.3'}).then(()=>{
+      console.log('[clearAllCheckInData] ✅ 云端数据也已清除');
+      showToast('✅ 所有数据已清除，云端同步完成！');
+    }).catch(e=>{
+      console.error('[clearAllCheckInData] 云端清除失败:', e.message);
+      showToast('⚠️ 本地已清除，云端清除失败，下次同步时会覆盖');
+    });
+  } else {
+    showToast('✅ 所有打卡数据已清除！');
+  }
+  
+  // 5. 刷新界面
+  initGame();
+  console.log('[clearAllCheckInData] ✅ 所有打卡数据已清除，重新开始！');
+}
+
 function showLoginHint(msg){
   const h=document.getElementById('loginHint');
   h.textContent=msg;h.style.opacity=1;
@@ -3815,6 +3849,10 @@ function recUnlockStory() {
   
   renderRecGems();
   renderRecStoryBook();
+  
+  // 【升级】补录解锁故事后，立即弹出故事交互弹窗（与当日打卡体验一致）
+  showStoryModal(story);
+  bigConfetti();
 }
 
 // 手动保存故事（补录对话框）

@@ -176,6 +176,11 @@
         </div>
         <button id="btnManualSync" onclick="manualSync()" style="width:100%;padding:14px;border:none;border-radius:14px;background:linear-gradient(135deg,#4A7CF7,#A855F7);color:white;font-size:16px;font-weight:600;font-family:inherit;cursor:pointer;box-shadow:0 4px 15px rgba(74,124,247,0.3);transition:.3s">☁️ 手动同步</button>
         <p style="color:var(--t3);font-size:11px;margin-top:8px">💡 提示：配置 Token 后，数据会自动备份到 GitHub</p>
+        <!-- 清除数据按钮 -->
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+          <button onclick="clearAllCheckInData()" style="width:100%;padding:12px;border:2px solid #EF4444;border-radius:14px;background:transparent;color:#EF4444;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;transition:.3s">🗑️ 清除所有打卡数据（重新开始）</button>
+          <p style="color:var(--t3);font-size:11px;margin-top:6px">⚠️ 清除后不可恢复，包括本地和云端所有记录</p>
+        </div>
       </div>
     </div>
   </div>
