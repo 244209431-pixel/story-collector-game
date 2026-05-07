@@ -2081,24 +2081,70 @@ function showHistoryDetail(dateStr){
     <h3>📅 ${dateLabel}</h3>
     <button class="history-close" onclick="closeHistoryPanel()">✕</button>
   </div>
-  <div class="history-summary ${allDone?'all-done':''}">
+  
+  <!-- 完成状态摘要 -->
+  <div class="history-summary ${allDone?'all-done':''}" style="margin-bottom:12px">
     ${allDone?'🌟 全部完成！太棒了！':'🔸 部分完成'}
     <span class="history-gems">💎 ×${gemsCount}</span>
   </div>
-  <div class="history-section">
-    <h4>📋 任务完成情况</h4>
+  
+  <!-- 运动卡片（今日跳绳日/游泳日） -->
+  <div class="sport-card ${isJ?'jc':'sc'}" style="margin-bottom:12px">
+    <div class="sport-head">
+      <div class="sport-icon">${isJ?'🏃‍♀️':'🏊‍♀️'}</div>
+      <div class="sport-info">
+        <h3>${isJ?'今日跳绳日 🎯':'今日游泳日 🌊'}</h3>
+        <p>${isJ?'目标：跳满 1500 个':'完成今日游泳课'}</p>
+      </div>
+      <div style="margin-left:auto;font-size:28px">${hist.tasks.sport?'✅':'⏳'}</div>
+    </div>
+    <div class="progress-bg">
+      <div class="progress-fill" style="width:${hist.tasks.sport?100:0}%"></div>
+    </div>
+    <div class="progress-txt">
+      <span>${isJ?`已跳 ${hist.jumpCount||0} 个`:(hist.swimDone?'游泳课已完成':'等待完成')}</span>
+    </div>
+  </div>
+  
+  <!-- 今日故事宝石 -->
+  <div class="card" style="margin-bottom:12px">
+    <h4 style="font-size:15px;margin-bottom:8px">💎 今日故事宝石</h4>
+    <div class="gems-grid" style="justify-content:center">
+      ${['sport','homework','study','outdoor'].map(k=>{
+        const gemEmoji=k==='sport'? (isJ?'🏃‍♀️':'🏊‍♀️') : k==='homework'?'📝':k==='study'?'📖':'⭐';
+        const gemName=k==='sport'? (isJ?'跳绳':'游泳') : k==='homework'?'作业':'学习';
+        const isActive=hist.gems&&hist.gems.includes(k);
+        return `<div class="gem ${isActive?'active':''}" style="width:60px;height:60px;font-size:24px;cursor:default">
+          ${isActive?gemEmoji:'🔒'}
+          <div class="gem-label" style="font-size:10px;margin-top:2px">${isActive?gemName:'未解锁'}</div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>
+  
+  <!-- 每日冒险任务 -->
+  <div class="card" style="margin-bottom:12px">
+    <h4 style="font-size:15px;margin-bottom:8px">📋 每日冒险任务</h4>
     ${tasksHtml}
   </div>
-  ${habitsHtml?`<div class="history-section">
-    <h4>⭐ 行为习惯</h4>
+  
+  <!-- 今日故事 -->
+  ${hist.story?`<div class="card" style="margin-bottom:12px">
+    <h4 style="font-size:15px;margin-bottom:8px">📖 今日故事</h4>
+    <div class="story-book" style="padding:16px">
+      <span class="book-icon">📚</span>
+      <h4>${hist.storyTitle||'今日故事'}</h4>
+      <p style="font-size:13px;line-height:1.6;color:var(--t2)">${hist.story}</p>
+    </div>
+  </div>`:''}
+  
+  <!-- 今日行为习惯 -->
+  ${habitsHtml?`<div class="card" style="margin-bottom:12px">
+    <h4 style="font-size:15px;margin-bottom:8px">⭐ 今日行为习惯</h4>
     ${habitsHtml}
   </div>`:''}
   
-  ${hist.story?`<div class="history-section">
-    <h4>📖 今日故事</h4>
-    <div style="padding:12px 16px;border-radius:12px;background:rgba(255,255,255,0.6);line-height:1.8;font-size:14px;color:var(--t2)">${hist.story}</div>
-  </div>`:''}
-  
+  <!-- 关闭按钮 -->
   <div style="text-align:center;margin-top:16px">
     <button class="btn" style="background:linear-gradient(135deg,var(--pink),var(--purple));color:white;border:none;padding:10px 24px;border-radius:12px;font-size:14px;cursor:pointer" onclick="closeHistoryPanel()">✅ 关闭</button>
   </div>
