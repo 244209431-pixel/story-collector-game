@@ -3469,7 +3469,7 @@ function renderRecGems() {
   }).join('');
 }
 
-// 渲染补录对话框的运动卡片（今日跳绳日/游泳日标题）
+// 渲染补录对话框的运动卡片（补录日期跳绳日/游泳日标题）
 function renderRecSportCard() {
   const container = document.getElementById('recSportCardContainer');
   if (!container) return;
@@ -3478,6 +3478,13 @@ function renderRecSportCard() {
   const isJ = JUMP.includes(dw);
   const sportDone = recDialogData.tasks.sport;
   
+  // 格式化日期显示：3月15日(周三)
+  const date = new Date(recDialogDateStr);
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const weekday = ['日', '一', '二', '三', '四', '五', '六'][date.getDay()];
+  const dateLabel = `${month}月${day}日(周${weekday})`;
+  
   let html = '';
   if (isJ) {
     // 跳绳日
@@ -3485,7 +3492,7 @@ function renderRecSportCard() {
       <div class="sport-head">
         <div class="sport-icon">🏃‍♀️</div>
         <div class="sport-info">
-          <h3>今日跳绳日 🎯</h3>
+          <h3>${dateLabel} 跳绳日 🎯</h3>
           <p>目标：跳满 1500 个</p>
         </div>
         <div style="margin-left:auto;font-size:28px">${sportDone ? '✅' : '⏳'}</div>
@@ -3503,7 +3510,7 @@ function renderRecSportCard() {
       <div class="sport-head">
         <div class="sport-icon">🏊‍♀️</div>
         <div class="sport-info">
-          <h3>今日游泳日 🌊</h3>
+          <h3>${dateLabel} 游泳日 🌊</h3>
           <p>完成今日游泳课</p>
         </div>
         <div style="margin-left:auto;font-size:28px">${sportDone ? '✅' : '⏳'}</div>
