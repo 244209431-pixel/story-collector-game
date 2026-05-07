@@ -2095,13 +2095,13 @@ function showHistoryDetail(dateStr){
     <span class="history-gems">💎 ×${gemsCount}</span>
   </div>
   
-  <!-- 运动卡片（今日跳绳日/游泳日） -->
+  <!-- 运动卡片 -->
   <div class="sport-card ${isJ?'jc':'sc'}" style="margin-bottom:12px">
     <div class="sport-head">
       <div class="sport-icon">${isJ?'🏃‍♀️':'🏊‍♀️'}</div>
       <div class="sport-info">
-        <h3>${isJ?'今日跳绳日 🎯':'今日游泳日 🌊'}</h3>
-        <p>${isJ?'目标：跳满 1500 个':'完成今日游泳课'}</p>
+        <h3>${dateLabel}${isJ?'跳绳日 🎯':'游泳日 🌊'}</h3>
+        <p>${isJ?'目标：跳满 1500 个':'完成游泳课'}</p>
       </div>
       <div style="margin-left:auto;font-size:28px">${hist.tasks.sport?'✅':'⏳'}</div>
     </div>
@@ -2113,9 +2113,9 @@ function showHistoryDetail(dateStr){
     </div>
   </div>
   
-  <!-- 今日故事宝石 -->
+  <!-- 故事宝石 -->
   <div class="card" style="margin-bottom:12px">
-    <h4 style="font-size:15px;margin-bottom:8px">💎 今日故事宝石</h4>
+    <h4 style="font-size:15px;margin-bottom:8px">💎 故事宝石</h4>
     <div class="gems-grid" style="justify-content:center">
       ${['sport','homework','study','outdoor'].map(k=>{
         const gemEmoji=k==='sport'? (isJ?'🏃‍♀️':'🏊‍♀️') : k==='homework'?'📝':k==='study'?'📖':'⭐';
@@ -2129,26 +2129,26 @@ function showHistoryDetail(dateStr){
     </div>
   </div>
   
-  <!-- 每日冒险任务 -->
+  <!-- 冒险任务 -->
   <div class="card" style="margin-bottom:12px">
-    <h4 style="font-size:15px;margin-bottom:8px">📋 每日冒险任务</h4>
+    <h4 style="font-size:15px;margin-bottom:8px">📋 冒险任务</h4>
     ${tasksHtml}
   </div>
   
-  <!-- 今日故事 -->
+  <!-- 故事 -->
   ${hist.story?`<div class="card" style="margin-bottom:12px">
-    <h4 style="font-size:15px;margin-bottom:8px">📖 今日故事</h4>
-    <div class="story-book" style="padding:16px;cursor:pointer" onclick="if(window._tempHistStory) showStoryModal(window._tempHistStory)">
-      <span class="book-icon">📚</span>
-      <h4>${hist.storyTitle||'今日故事'}</h4>
+    <h4 style="font-size:15px;margin-bottom:8px">📖 故事</h4>
+      <div class="story-book" style="padding:16px;cursor:pointer" onclick="if(window._tempHistStory) showStoryModal(window._tempHistStory)">
+        <span class="book-icon">📚</span>
+        <h4>${hist.storyTitle||'当日故事'}</h4>
       <p style="font-size:13px;line-height:1.6;color:var(--t2)">${hist.story.substring(0,50)}${hist.story.length>50?'...':''}</p>
       <div style="text-align:center;margin-top:8px;color:var(--purple);font-size:12px">点击查看完整故事 →</div>
     </div>
   </div>`:''}
   
-  <!-- 今日行为习惯 -->
+  <!-- 行为习惯 -->
   ${habitsHtml?`<div class="card" style="margin-bottom:12px">
-    <h4 style="font-size:15px;margin-bottom:8px">⭐ 今日行为习惯</h4>
+    <h4 style="font-size:15px;margin-bottom:8px">⭐ 行为习惯</h4>
     ${habitsHtml}
   </div>`:''}
   
@@ -3521,7 +3521,7 @@ function renderRecSportCard() {
         <div class="sport-icon">🏊‍♀️</div>
         <div class="sport-info">
           <h3>${dateLabel} 游泳日 🌊</h3>
-          <p>完成今日游泳课</p>
+          <p>完成游泳课</p>
         </div>
         <div style="margin-left:auto;font-size:28px">${sportDone ? '✅' : '⏳'}</div>
       </div>
