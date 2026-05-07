@@ -2024,7 +2024,7 @@ function showHistoryDetail(dateStr){
   panel.style.display='block';
   
   if(!hist){
-    // 【v6.0】没有记录时显示补录按钮
+    // 【v6.0】没有记录时显示补录按钮 → 统一到新版补录对话框
     const isJ=JUMP.includes(dw);
     const sportLabel=isJ?'跳绳':'游泳';
     panel.innerHTML=`<div class="history-header">
@@ -2034,7 +2034,7 @@ function showHistoryDetail(dateStr){
     <div class="history-empty">
       <span style="font-size:36px">📭</span>
       <p>这一天没有打卡记录</p>
-      <button class="btn" style="margin-top:12px;background:linear-gradient(135deg,var(--pink),var(--purple));color:white;border:none;padding:10px 20px;border-radius:12px;font-size:14px;cursor:pointer" onclick="backfillDate('${dateStr}')">📝 补录这天的打卡</button>
+      <button class="btn" style="margin-top:12px;background:linear-gradient(135deg,var(--pink),var(--purple));color:white;border:none;padding:10px 20px;border-radius:12px;font-size:14px;cursor:pointer" onclick="closeHistoryPanel(); setTimeout(()=>showRecoveryDialog(new Date('${dateStr}')), 100)">📝 补录这天的打卡</button>
     </div>`;
     return;
   }
@@ -3557,12 +3557,21 @@ function renderRecStoryBook() {
     }
   }
   
-  // 检查是否已解锁故事
+  // 检查是否已解锁故事（包括手动录入的）
   if (recDialogData.story) {
     btnEl.disabled = false;
-    btnEl.textContent = '📖 查看已选故事';
-    titleEl.textContent = '✅ 今日故事已解锁！';
-    previewEl.textContent = recDialogData.story.title || '故事已收集';
+    const story = recDialogData.story;
+    const isManual = story.text && story.text.length > 50; // 手动录入的故事通常有较长内容
+    
+    btnEl.textContent = isManual ? '📖 查看已录故事' : '📖 查看已选故事';
+    titleEl.textContent = '✅ 今日故事已保存！';
+    previewEl.textContent = story.title || '故事已收集';
+    
+    // 填充输入框，让用户可以修改
+    const titleInput = document.getElementById('recStoryTitleInput');
+    const textInput = document.getElementById('recStoryTextInput');
+    if (titleInput) titleInput.value = story.title || '';
+    if (textInput) textInput.value = story.text || '';
   } else if (done >= total) {
     btnEl.disabled = false;
     btnEl.textContent = '✨ 解锁今日故事！';
@@ -3737,6 +3746,37 @@ function recUnlockStory() {
   renderRecStoryBook();
 }
 
+// 手动保存故事（补录对话框）
+function recSaveStory() {
+  const titleInput = document.getElementById('recStoryTitleInput');
+  const textInput = document.getElementById('recStoryTextInput');
+  if (!textInput) return;
+  
+  const title = titleInput ? titleInput.value.trim() : '';
+  const text = textInput.value.trim();
+  
+  if (!text) {
+    alert('⚠️ 请输入故事内容');
+    return;
+  }
+  
+  // 保存到 recDialogData
+  recDialogData.story = {
+    title: title || '今日故事',
+    text: text
+  };
+  
+  // 如果 gems 中没有 'story'，添加它
+  if (!recDialogData.gems.includes('story')) {
+    recDialogData.gems.push('story');
+  }
+  
+  renderRecGems();
+  renderRecStoryBook();
+  
+  alert('✅ 故事已保存！');
+}
+
 // 切换习惯状态
 function recToggleHabit(k) {
   recDialogData.habits[k] = !recDialogData.habits[k];
@@ -3810,12 +3850,18 @@ function confirmRecovery() {
   // 保存补录数据到 history
   const done = Object.values(recDialogData.tasks).filter(v => v).length;
   const allDone = done >= 4;
+  const dw = new Date(recDialogDateStr).getDay();
+  const isJ = JUMP.includes(dw);
   
   G.history[recDialogDateStr] = {
     tasks: { ...recDialogData.tasks },
     gems: [...recDialogData.gems],
     habits: { ...recDialogData.habits },
     allDone: allDone,
+    story: recDialogData.story || null,  // 保存故事（包括手动录入的）
+    sportType: isJ ? 'jump' : 'swim',
+    jumpCount: isJ ? (G.jumpCount || 1500) : 0,
+    swimDone: !isJ ? recDialogData.tasks.sport : false,
     date: recDialogDateStr
   };
   
