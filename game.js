@@ -2543,8 +2543,9 @@ function unlockStory(){
   renderGems();renderCollected();save();showStoryModal(story);bigConfetti();
 }
 function showStoryModal(s){
-  document.getElementById('mStoryTitle').textContent=s.title;
-  let b=`<div class="story-text">${s.text.replace(/\n/g,'<br>')}</div>`;
+  if(!s || !s.text) return;
+  document.getElementById('mStoryTitle').textContent=s.title||'今日故事';
+  let b=`<div class="story-text">${(s.text||'').replace(/\n/g,'<br>')}</div>`;
   if(s.choices&&s.choices.length){
     b+='<p style="margin-top:14px;color:var(--gold);font-size:15px">选择你想要的结局：</p><div class="story-choices">';
     s.choices.forEach(c=>{b+=`<button class="s-choice" onclick="selectEnd('${c.ending}')">${c.text}</button>`});
@@ -2552,7 +2553,9 @@ function showStoryModal(s){
   }
   b+='<button class="story-back-btn" onclick="closeModal(\'storyModal\')">⬅️ 返回</button>';
   document.getElementById('mStoryBody').innerHTML=b;
-  document.getElementById('storyModal').classList.add('show');
+  const modal=document.getElementById('storyModal');
+  modal.style.zIndex='210';
+  modal.classList.add('show');
 }
 function selectEnd(e){
   // 移除选择按钮

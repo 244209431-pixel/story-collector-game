@@ -531,7 +531,7 @@ body{
   z-index:200;display:none;align-items:center;justify-content:center;
   padding:20px;backdrop-filter:blur(10px);
 }
-.modal-overlay.show{display:flex;animation:fi .3s ease}
+.modal-overlay.show{display:flex;animation:fi .3s ease;z-index:210}
 @keyframes fi{from{opacity:0}to{opacity:1}}
 .modal-content{
   background:linear-gradient(135deg,#FFF5FA,#F3E8FF,#EBF0FF);
