@@ -355,6 +355,38 @@ body{
   color:var(--t-white);
 }
 .task-item.done .task-cb{background:linear-gradient(135deg,#34D399,#10B981);border-color:#34D399}
+
+/* ============ 补录对话框内任务项增强可读性 ============ */
+.recovery-mode .task-item{
+  background:rgba(255,255,255,0.9);
+  border:2px solid rgba(255,152,0,0.15);
+  box-shadow:0 2px 8px rgba(0,0,0,0.04);
+}
+.recovery-mode .task-item:hover{
+  border-color:rgba(255,152,0,0.35);
+  background:rgba(255,255,255,0.95);
+}
+.recovery-mode .task-cb{
+  color:#e65100;
+  border-color:rgba(255,152,0,0.4);
+  background:rgba(255,152,0,0.06);
+  font-weight:bold;
+  font-size:16px;
+}
+.recovery-mode .task-item.done{
+  background:linear-gradient(135deg,rgba(52,211,153,0.12),rgba(16,185,129,0.12));
+  border-color:rgba(52,211,153,0.4);
+}
+.recovery-mode .task-item.done .task-cb{
+  background:linear-gradient(135deg,#34D399,#10B981);
+  border-color:#34D399;
+  color:#fff;
+}
+.recovery-mode .task-info h4{
+  color:#333;
+  font-size:15px;
+}
+
 .task-em{font-size:28px;flex-shrink:0}
 .task-info{flex:1}.task-info h4{font-size:16px;margin-bottom:3px;color:var(--t1)}.task-info p{font-size:13px;color:var(--t3)}
 .task-gem{font-size:24px;opacity:.3;transition:.3s}
