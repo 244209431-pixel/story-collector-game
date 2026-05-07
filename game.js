@@ -3344,77 +3344,411 @@ function renderRecoveryCalendar() {
 }
 
 // 显示补录对话框
+// 当前补录对话框的状态
+let recDialogDateStr = '';  // 当前补录的日期字符串
+let recDialogData = null;   // 当前补录的数据（临时编辑状态）
+
 function showRecoveryDialog(date) {
   const dateStr = date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
-  document.getElementById('recDialogDate').textContent = dateStr;
-  document.getElementById('recDialogDate').dataset.date = date.toDateString();
+  recDialogDateStr = date.toDateString();
   
-  document.getElementById('recDialogCheckin').checked = false;
-  document.getElementById('recDialogMedal').value = '';
-  document.getElementById('recDialogStory').value = '';
+  document.getElementById('recDialogDate').textContent = dateStr;
+  document.getElementById('recDialogDateStr').textContent = '补录日期：' + recDialogDateStr;
+  
+  // 初始化补录数据（从 G.history 恢复或新建）
+  recDialogData = {
+    tasks: { sport: false, homework: false, study: false, outdoor: false },
+    gems: [],
+    story: null,
+    habits: { vitaminD: false, quickAction: false, earlySleep: false },
+    allDone: false,
+    medalRedeemed: false
+  };
+  
+  // 如果已有历史记录，恢复它
+  if (G.history && G.history[recDialogDateStr]) {
+    const hist = G.history[recDialogDateStr];
+    recDialogData.tasks = { ...recDialogData.tasks, ...hist.tasks };
+    recDialogData.gems = hist.gems ? [...hist.gems] : [];
+    recDialogData.story = hist.story || null;
+    recDialogData.habits = { ...recDialogData.habits, ...hist.habits };
+    recDialogData.allDone = hist.allDone || false;
+  }
+  
+  // 渲染各个部分
+  renderRecGems();
+  renderRecTasks();
+  renderRecStoryBook();
+  renderRecHabits();
+  renderRecMedalSection();
   
   document.getElementById('recoveryDialog').style.display = 'flex';
 }
 
-// 隐藏补录对话框
-function hideRecoveryDialog() {
-  document.getElementById('recoveryDialog').style.display = 'none';
+// ===== 补录对话框渲染函数 =====
+
+// 渲染补录对话框的宝石网格
+function renderRecGems() {
+  const g = document.getElementById('recGemsGrid');
+  if (!g) return;
+  
+  const dw = new Date(recDialogDateStr).getDay();
+  const isJ = JUMP.includes(dw);
+  const gems = [
+    { n: isJ ? '跳绳' : '游泳', i: isJ ? '🧡' : '💙', k: 'sport' },
+    { n: '作业', i: '💜', k: 'homework' },
+    { n: '学习', i: '💛', k: 'study' },
+    { n: '习惯', i: '💚', k: 'outdoor' },
+    { n: '故事', i: '❤️', k: 'story' }
+  ];
+  
+  g.innerHTML = gems.map(gm => {
+    const on = recDialogData.tasks[gm.k] || recDialogData.gems.includes(gm.k);
+    return `<div class="gem-slot ${on ? 'on' : 'off'}" onclick="recToggleGem('${gm.k}')">
+      <span class="gi">${on ? gm.i : '🔒'}</span>
+      <span class="gl">${gm.n}</span>
+    </div>`;
+  }).join('');
 }
 
-// 确认补录
-function confirmRecovery() {
-  const dateStr = document.getElementById('recDialogDate').dataset.date;
-  const isCheckin = document.getElementById('recDialogCheckin').checked;
-  const medal = document.getElementById('recDialogMedal').value;
-  const story = document.getElementById('recDialogStory').value.trim();
+// 渲染补录对话框的任务列表
+function renderRecTasks() {
+  const l = document.getElementById('recTasksList');
+  if (!l) return;
   
-  if (!isCheckin && !medal && !story) {
-    alert('请至少选择一项补录内容！');
-    return;
-  }
+  const dw = new Date(recDialogDateStr).getDay();
+  const isJ = JUMP.includes(dw);
+  const tasks = [
+    { k: 'sport', e: isJ ? '🏃‍♀️' : '🏊‍♀️', t: isJ ? `跳绳 ${G.jumpCount}/1500` : '完成游泳课', d: isJ ? '今天是跳绳日！加油！' : '今天是游泳日！加油！', g: isJ ? '🧡' : '💙' },
+    { k: 'homework', e: '📝', t: '认真高效完成学校作业', d: '专注写作业，不拖拉不磨蹭', g: '💜' },
+    { k: 'study', e: '📖', t: '认真学习英语', d: '专注高效，认真完成学习任务', g: '💛' },
+    { k: 'outdoor', e: '⭐', t: '今日行为习惯达标', d: '做事快速、吃维生素D、早睡', g: '💚' }
+  ];
   
-  if (isCheckin) {
-    if (!G.history) G.history = {};
-    G.history[dateStr] = { done: true, date: dateStr };
-    console.log('[补录] 打卡记录:', dateStr);
-  }
+  l.innerHTML = tasks.map(t => {
+    const done = recDialogData.tasks[t.k];
+    return `<div class="task-item ${done ? 'done' : ''}" onclick="recToggleTask('${t.k}')">
+      <div class="task-cb">${done ? '✓' : ''}</div>
+      <div class="task-em">${t.e}</div>
+      <div class="task-info"><h4>${t.t}</h4><p>${t.d}</p></div>
+      <div class="task-gem">${t.g}</div>
+    </div>`;
+  }).join('');
+}
+
+// 渲染补录对话框的故事书部分
+function renderRecStoryBook() {
+  const titleEl = document.getElementById('recStoryTitle');
+  const previewEl = document.getElementById('recStoryPreview');
+  const btnEl = document.getElementById('recBtnUnlock');
+  const progressBar = document.getElementById('recStoryProgressBar');
   
-  if (medal) {
-    if (!G.medals) G.medals = [];
-    const medalInfo = {
-      'brave': { title: '勇敢勋章', icon: '🏅', desc: '完成一次勇敢的挑战' },
-      'kind': { title: '善良勋章', icon: '💝', desc: '帮助他人一次' },
-      'persist': { title: '坚持勋章', icon: '⏳', desc: '连续打卡7天' },
-      'creative': { title: '创意勋章', icon: '🎨', desc: '创作一个故事' },
-      'explorer': { title: '探索勋章', icon: '🗺️', desc: '探索新领域' }
-    };
-    
-    if (medalInfo[medal]) {
-      G.medals.push({
-        title: medalInfo[medal].title,
-        icon: medalInfo[medal].icon,
-        desc: medalInfo[medal].desc,
-        date: dateStr,
-        weekId: getWeekId(new Date(dateStr))
-      });
-      console.log('[补录] 勋章:', medalInfo[medal].title);
+  if (!titleEl || !previewEl || !btnEl) return;
+  
+  // 计算已完成任务数
+  const done = Object.values(recDialogData.tasks).filter(v => v).length;
+  const total = 4;
+  
+  // 渲染进度条
+  if (progressBar) {
+    progressBar.innerHTML = '';
+    for (let i = 0; i < total; i++) {
+      const d = document.createElement('div');
+      d.className = 'sp-slot ' + (i < done ? 'on' : '');
+      progressBar.appendChild(d);
     }
   }
   
-  if (story) {
-    if (!G.myStories) G.myStories = [];
-    G.myStories.push({
-      title: story.substring(0, 20) + (story.length > 20 ? '...' : ''),
-      text: story,
-      date: dateStr
-    });
-    console.log('[补录] 故事:', story.substring(0, 20));
+  // 检查是否已解锁故事
+  if (recDialogData.story) {
+    btnEl.disabled = false;
+    btnEl.textContent = '📖 查看已选故事';
+    titleEl.textContent = '✅ 今日故事已解锁！';
+    previewEl.textContent = recDialogData.story.title || '故事已收集';
+  } else if (done >= total) {
+    btnEl.disabled = false;
+    btnEl.textContent = '✨ 解锁今日故事！';
+    titleEl.textContent = '🌟 故事已就绪！';
+    previewEl.textContent = '所有宝石已集齐，点击解锁故事！';
+  } else {
+    btnEl.disabled = true;
+    btnEl.textContent = `🔮 还需 ${total - done} 块宝石`;
+    titleEl.textContent = '等待宝石解锁...';
+    previewEl.textContent = `已收集 ${done}/${total} 块宝石`;
+  }
+}
+
+// 渲染补录对话框的习惯列表
+function renderRecHabits() {
+  const l = document.getElementById('recHabitsList');
+  if (!l) return;
+  
+  const habits = [
+    { k: 'vitaminD', t: '吃维生素D', i: '💊' },
+    { k: 'quickAction', t: '做事快速不磨蹭', i: '⚡' },
+    { k: 'earlySleep', t: '早睡（10点前上床）', i: '🌙' }
+  ];
+  
+  l.innerHTML = habits.map(h => {
+    const done = recDialogData.habits[h.k];
+    return `<div class="habit-item ${done ? 'done' : ''}" onclick="recToggleHabit('${h.k}')">
+      <div class="habit-cb">${done ? '✓' : ''}</div>
+      <span class="habit-icon">${h.i}</span>
+      <span class="habit-text">${h.t}</span>
+    </div>`;
+  }).join('');
+}
+
+// 渲染补录对话框的勋章部分
+function renderRecMedalSection() {
+  const container = document.getElementById('recMedalOptions');
+  if (!container) return;
+  
+  // 计算当前补录日期所在周是否满勤
+  const dateObj = new Date(recDialogDateStr);
+  const weekId = getWeekId(dateObj);
+  
+  // 检查本周7天是否全部完成
+  const weekDates = [];
+  const mondayDow = mondayDow(dateObj.getDay());
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(dateObj);
+    d.setDate(dateObj.getDate() - mondayDow + i);
+    weekDates.push(d.toDateString());
   }
   
+  let allWeekDone = true;
+  weekDates.forEach(d => {
+    if (!G.history[d] || !G.history[d].allDone) {
+      allWeekDone = false;
+    }
+  });
+  
+  // 检查本周是否已获得勋章
+  const hasMedal = G.medals && G.medals.some(m => m.weekId === weekId);
+  
+  let html = '';
+  if (allWeekDone && !hasMedal) {
+    // 可兑换
+    html = `<div style="padding:10px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:12px;margin-bottom:8px">
+      <div style="color:#10B981;font-weight:600;margin-bottom:6px">✅ 本周满勤，可兑换勋章！</div>
+      <button class="btn-unlock" style="background:linear-gradient(135deg,#10B981,#34D399);color:white;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px" onclick="recRedeemMedal()">🏅 兑换本周勋章</button>
+    </div>`;
+  } else if (hasMedal) {
+    // 已兑换
+    const medal = G.medals.find(m => m.weekId === weekId);
+    html = `<div style="padding:10px;background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.3);border-radius:12px">
+      <div style="color:var(--gold);font-weight:600">🏅 本周勋章已兑换</div>
+      <div style="font-size:12px;color:var(--t3);margin-top:4px">${medal ? medal.title : ''}</div>
+    </div>`;
+  } else {
+    // 未满勤
+    html = `<div style="padding:10px;background:rgba(156,163,175,0.1);border:1px solid rgba(156,163,175,0.2);border-radius:12px;color:var(--t3);font-size:13px">
+      ⚠️ 本周未满勤（7天全部完成打卡才能兑换勋章）
+    </div>`;
+  }
+  
+  container.innerHTML = html;
+}
+
+// ===== 补录对话框交互函数 =====
+
+// 切换宝石状态
+function recToggleGem(k) {
+  if (k === 'story') {
+    // 故事宝石：尝试解锁故事
+    const done = Object.values(recDialogData.tasks).filter(v => v).length;
+    if (done >= 4) {
+      recUnlockStory();
+    }
+    return;
+  }
+  
+  // 其他宝石：切换任务状态
+  recDialogData.tasks[k] = !recDialogData.tasks[k];
+  
+  // 更新 gems 数组
+  if (recDialogData.tasks[k]) {
+    if (!recDialogData.gems.includes(k)) {
+      recDialogData.gems.push(k);
+    }
+  } else {
+    recDialogData.gems = recDialogData.gems.filter(g => g !== k);
+  }
+  
+  renderRecGems();
+  renderRecTasks();
+  renderRecStoryBook();
+}
+
+// 切换任务状态
+function recToggleTask(k) {
+  if (k === 'outdoor') return; // 习惯任务，不允许直接切换
+  recDialogData.tasks[k] = !recDialogData.tasks[k];
+  
+  // 更新 gems 数组
+  if (recDialogData.tasks[k]) {
+    if (!recDialogData.gems.includes(k)) {
+      recDialogData.gems.push(k);
+    }
+  } else {
+    recDialogData.gems = recDialogData.gems.filter(g => g !== k);
+  }
+  
+  renderRecGems();
+  renderRecTasks();
+  renderRecStoryBook();
+}
+
+// 解锁故事
+function recUnlockStory() {
+  // 检查是否已选择故事
+  if (recDialogData.story) {
+    showStoryModal(recDialogData.story);
+    return;
+  }
+  
+  // 从故事池选择故事
+  const dw = new Date(recDialogDateStr).getDay();
+  const isJ = JUMP.includes(dw);
+  const pool = isJ ? STORIES.jump : STORIES.swim;
+  
+  // 排除已收集的故事
+  const collectedTitles = new Set(G.collected.map(s => s.title));
+  const available = pool.filter(s => !collectedTitles.has(s.title));
+  
+  let story;
+  if (available.length > 0) {
+    // 使用确定性选择
+    const dateHash = recDialogDateStr.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    story = available[dateHash % available.length];
+  } else {
+    // 所有故事都收集过了
+    const dateHash = recDialogDateStr.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    story = pool[dateHash % pool.length];
+  }
+  
+  recDialogData.story = story;
+  if (!recDialogData.gems.includes('story')) {
+    recDialogData.gems.push('story');
+  }
+  
+  renderRecGems();
+  renderRecStoryBook();
+}
+
+// 切换习惯状态
+function recToggleHabit(k) {
+  recDialogData.habits[k] = !recDialogData.habits[k];
+  renderRecHabits();
+}
+
+// 兑换勋章
+function recRedeemMedal() {
+  const dateObj = new Date(recDialogDateStr);
+  const weekId = getWeekId(dateObj);
+  
+  // 检查是否已获得
+  if (G.medals && G.medals.some(m => m.weekId === weekId)) {
+    alert('本周勋章已兑换！');
+    return;
+  }
+  
+  // 发放勋章
+  const medalIdx = G.medals ? G.medals.length : 0;
+  const medalDef = medalIdx < MEDAL_LIST.length ? MEDAL_LIST[medalIdx] : MEDAL_LIST[MEDAL_LIST.length - 1];
+  
+  const newMedal = {
+    weekId: weekId,
+    icon: medalDef.icon,
+    title: medalIdx >= MEDAL_LIST.length ? medalDef.title + ' #' + (medalIdx - MEDAL_LIST.length + 2) : medalDef.title,
+    desc: medalDef.desc,
+    earnedDate: recDialogDateStr,
+    redeemed: true,  // 补录时直接标记为已兑换
+    redeemedDate: new Date().toDateString()
+  };
+  
+  if (!G.medals) G.medals = [];
+  G.medals.push(newMedal);
+  
+  recDialogData.medalRedeemed = true;
+  renderRecMedalSection();
+  
+  alert('🏅 勋章兑换成功！');
+}
+
+// 隐藏补录对话框
+// 隐藏补录对话框
+function hideRecoveryDialog() {
+  document.getElementById('recoveryDialog').style.display = 'none';
+  recDialogDateStr = '';
+  recDialogData = null;
+}
+
+// 确认补录
+// 确认补录（重构版）
+function confirmRecovery() {
+  if (!recDialogDateStr || !recDialogData) {
+    alert('⚠️ 补录数据异常，请重新打开对话框');
+    return;
+  }
+  
+  // 检查是否有内容
+  const hasTasks = Object.values(recDialogData.tasks).some(v => v);
+  const hasHabits = Object.values(recDialogData.habits).some(v => v);
+  const hasStory = !!recDialogData.story;
+  const hasMedal = recDialogData.medalRedeemed;
+  
+  if (!hasTasks && !hasHabits && !hasStory && !hasMedal) {
+    alert('请至少完成一项（任务/习惯/故事/勋章）！');
+    return;
+  }
+  
+  // 初始化 history
+  if (!G.history) G.history = {};
+  
+  // 保存补录数据到 history
+  const done = Object.values(recDialogData.tasks).filter(v => v).length;
+  const allDone = done >= 4;
+  
+  G.history[recDialogDateStr] = {
+    tasks: { ...recDialogData.tasks },
+    gems: [...recDialogData.gems],
+    habits: { ...recDialogData.habits },
+    allDone: allDone,
+    date: recDialogDateStr
+  };
+  
+  // 如果解锁了故事，加入已收集故事集
+  if (recDialogData.story) {
+    // 检查是否已收集过
+    const alreadyCollected = G.collected.some(s => 
+      s.title === recDialogData.story.title && s.date === recDialogDateStr
+    );
+    
+    if (!alreadyCollected) {
+      G.collected.push({
+        ...recDialogData.story,
+        date: recDialogDateStr,
+        type: JUMP.includes(new Date(recDialogDateStr).getDay()) ? 'jump' : 'swim'
+      });
+      console.log('[补录] 故事已加入收集集：', recDialogData.story.title);
+    }
+  }
+  
+  // 更新 weekly 状态（用于勋章判断）
+  if (!G.weekly) G.weekly = {};
+  G.weekly[recDialogDateStr] = allDone;
+  
+  // 保存
   save();
+  
+  // 更新UI
   hideRecoveryDialog();
   renderRecoveryCalendar();
   updateRecoveryStats();
+  repairData(); // 修复派生数据
+  initGame(); // 重新渲染主页
   
   alert('✅ 补录成功！');
 }

@@ -259,35 +259,53 @@
 <script src="game.js"></script>
 
 
-  <!-- 补录对话框 -->
+  <!-- 补录对话框（重构版 - 与主页面UI一致） -->
   <div class="modal-overlay" id="recoveryDialog" style="display:none">
-    <div class="modal">
+    <div class="modal" style="max-width:480px;width:95%">
       <div class="modal-header">
         <h3>📝 补录 <span id="recDialogDate"></span></h3>
         <button class="modal-close" onclick="hideRecoveryDialog()">×</button>
       </div>
-      <div class="modal-body">
-        <div class="recovery-form">
-          <label class="checkbox-label">
-            <input type="checkbox" id="recDialogCheckin">
-            <span>✅ 打卡完成</span>
-          </label>
-          
-          <div class="form-group">
-            <label>获得勋章：</label>
-            <select id="recDialogMedal">
-              <option value="">-- 选择勋章 --</option>
-              <option value="brave">🏅 勇敢勋章</option>
-              <option value="kind">💝 善良勋章</option>
-              <option value="persist">⏳ 坚持勋章</option>
-              <option value="creative">🎨 创意勋章</option>
-              <option value="explorer">🗺️ 探索勋章</option>
-            </select>
+      <div class="modal-body" style="max-height:70vh;overflow-y:auto">
+        <!-- 日期显示 -->
+        <div style="text-align:center;margin-bottom:12px;color:var(--t3);font-size:13px" id="recDialogDateStr"></div>
+        
+        <!-- 今日故事宝石 -->
+        <div class="card" style="margin-bottom:12px">
+          <h4 style="font-size:15px;margin-bottom:8px">💎 今日故事宝石</h4>
+          <div class="gems-grid" id="recGemsGrid"></div>
+        </div>
+        
+        <!-- 每日冒险任务 -->
+        <div class="card" style="margin-bottom:12px">
+          <h4 style="font-size:15px;margin-bottom:8px">📋 每日冒险任务</h4>
+          <div id="recTasksList"></div>
+        </div>
+        
+        <!-- 今日故事 -->
+        <div class="card" style="margin-bottom:12px">
+          <h4 style="font-size:15px;margin-bottom:8px">📖 今日故事</h4>
+          <div class="story-book" id="recStoryBook">
+            <span class="book-icon" id="recBookIcon">📚</span>
+            <h4 id="recStoryTitle">等待宝石解锁...</h4>
+            <p id="recStoryPreview">完成所有任务，集满宝石，解锁今天的神奇故事！</p>
+            <div class="story-progress-bar" id="recStoryProgressBar"></div>
+            <button class="btn-unlock" id="recBtnUnlock" disabled onclick="recUnlockStory()">🔮 宝石不足</button>
           </div>
-          
-          <div class="form-group">
-            <label>写故事：</label>
-            <textarea id="recDialogStory" placeholder="记录今天的故事..." rows="3"></textarea>
+        </div>
+        
+        <!-- 今日行为习惯 -->
+        <div class="card" style="margin-bottom:12px">
+          <h4 style="font-size:15px;margin-bottom:8px">⭐ 今日行为习惯</h4>
+          <div id="recHabitsList"></div>
+        </div>
+        
+        <!-- 获得勋章 -->
+        <div class="card" style="margin-bottom:12px">
+          <h4 style="font-size:15px;margin-bottom:8px">🏅 获得勋章（可选）</h4>
+          <div id="recMedalSection">
+            <div style="font-size:12px;color:var(--t3);margin-bottom:8px">完成本周7天打卡后，可在下方选择勋章兑换</div>
+            <div id="recMedalOptions"></div>
           </div>
         </div>
       </div>
