@@ -2144,9 +2144,10 @@ function showHistoryDetail(dateStr){
     ${habitsHtml}
   </div>`:''}
   
-  <!-- 关闭按钮 -->
-  <div style="text-align:center;margin-top:16px">
-    <button class="btn" style="background:linear-gradient(135deg,var(--pink),var(--purple));color:white;border:none;padding:10px 24px;border-radius:12px;font-size:14px;cursor:pointer" onclick="closeHistoryPanel()">✅ 关闭</button>
+  <!-- 按钮组 -->
+  <div style="display:flex;gap:8px;margin-top:16px">
+    <button class="btn" style="flex:1;background:var(--card);color:var(--t2);border:1px solid var(--border);padding:10px;border-radius:12px;font-size:14px;cursor:pointer" onclick="closeHistoryPanel();setTimeout(()=>showRecoveryDialog(new Date('${dateStr}')),100)">📝 重新补录</button>
+    <button class="btn" style="flex:1;background:linear-gradient(135deg,var(--pink),var(--purple));color:white;border:none;padding:10px;border-radius:12px;font-size:14px;cursor:pointer" onclick="closeHistoryPanel()">✅ 关闭</button>
   </div>
 </div>`;
   
