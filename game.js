@@ -2166,6 +2166,8 @@ function showHistoryDetail(dateStr){
 function closeHistoryPanel(){
   const panel=document.getElementById('historyPanel');
   if(panel)panel.style.display='none';
+  // 清除临时故事变量
+  window._tempHistStory=null;
 }
 
 // ===== 【v6.0】补录历史打卡 =====
