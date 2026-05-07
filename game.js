@@ -3446,6 +3446,15 @@ function showRecoveryDialog(date) {
     recDialogData.allDone = hist.allDone || false;
   }
   
+  // 【修复】确保 outdoor 任务状态与习惯完成情况同步
+  const allHabitsDone = recDialogData.habits.fast && recDialogData.habits.tidy && recDialogData.habits.polite;
+  recDialogData.tasks.outdoor = allHabitsDone;
+  if (allHabitsDone && !recDialogData.gems.includes('outdoor')) {
+    recDialogData.gems.push('outdoor');
+  } else if (!allHabitsDone) {
+    recDialogData.gems = recDialogData.gems.filter(g => g !== 'outdoor');
+  }
+  
   // 渲染各个部分
   renderRecSportCard();  // 先渲染运动卡片（今日跳绳日/游泳日）
   renderRecGems();
@@ -3825,6 +3834,25 @@ function recSaveStory() {
 function recToggleHabit(k) {
   recDialogData.habits[k] = !recDialogData.habits[k];
   renderRecHabits();
+  
+  // 【修复】检查是否所有习惯都完成，自动更新"今日行为习惯达标"任务
+  const allHabitsDone = recDialogData.habits.fast && recDialogData.habits.tidy && recDialogData.habits.polite;
+  const prevOutdoor = recDialogData.tasks.outdoor;
+  recDialogData.tasks.outdoor = allHabitsDone;
+  
+  // 同步更新 gems 数组
+  if (allHabitsDone && !prevOutdoor) {
+    if (!recDialogData.gems.includes('outdoor')) {
+      recDialogData.gems.push('outdoor');
+    }
+  } else if (!allHabitsDone && prevOutdoor) {
+    recDialogData.gems = recDialogData.gems.filter(g => g !== 'outdoor');
+  }
+  
+  // 重新渲染任务列表和相关 UI
+  renderRecTasks();
+  renderRecGems();
+  renderRecStoryBook();
 }
 
 // 兑换勋章
