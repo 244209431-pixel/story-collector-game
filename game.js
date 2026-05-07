@@ -1,6 +1,7 @@
 // ==========================================
 // 🎮 故事收集家 - 游戏核心引擎（GitHub Gist 同步版）
-// v11.3 — GitHub Gist 云端同步
+// v12.0 — Bug修复 + 故事扩充 + 勋章系统增强
+// 修复：补录数据完整性、云端同步恢复、变量命名冲突
 // ==========================================
 
 // ===== 云同步配置（GitHub Gist 方案） =====
@@ -1133,10 +1134,13 @@ async function cloudLoad(){
         
         const cloudIsNewer = cloudLastSync > localLastSync;
         
-        // 【v11.4 修复】改为 if(false)，让智能合并分支永远执行，不再执行"完整恢复"（会导致一端数据丢失）
-        if(false){
-          const mode = isFirstLoad ? '首次加载' : '云端更新(以云端/手机数据为准)';
-          console.log('[cloudLoad]', mode, '，执行完整恢复...');
+        // 【Bug5修复】当本地数据为空/初始状态时，执行完整恢复；否则智能合并
+        // 判断本地是否为"空数据"：history为空且date为null或今天（即从未使用过）
+        const localIsEmpty = (!G.history || Object.keys(G.history).length === 0) && (!G.date || G.date === new Date().toDateString());
+        // cloudHasData 已在上方声明（line 1112），此处直接复用
+        
+        if(localIsEmpty && cloudHasData){
+          console.log('[cloudLoad] 本地数据为空但云端有数据，执行完整恢复（从云端恢复所有数据）...');
           
           // 完整恢复所有字段（以云端为准）
           if(data.date) G.date = data.date;
@@ -3648,10 +3652,10 @@ function renderRecMedalSection() {
   
   // 检查本周7天是否全部完成
   const weekDates = [];
-  const mondayDow = mondayDow(dateObj.getDay());
+  const mDow = mondayDow(dateObj.getDay());
   for (let i = 0; i < 7; i++) {
     const d = new Date(dateObj);
-    d.setDate(dateObj.getDate() - mondayDow + i);
+    d.setDate(dateObj.getDate() - mDow + i);
     weekDates.push(d.toDateString());
   }
   
@@ -3900,6 +3904,7 @@ function confirmRecovery() {
     gems: [...recDialogData.gems],
     habits: { ...recDialogData.habits },
     allDone: allDone,
+    done: allDone,  // 兼容旧版检测逻辑
     story: recDialogData.story || null,  // 保存故事（包括手动录入的）
     sportType: isJ ? 'jump' : 'swim',
     jumpCount: isJ ? (G.jumpCount || 1500) : 0,
@@ -3928,14 +3933,14 @@ function confirmRecovery() {
   if (!G.weekly) G.weekly = {};
   G.weekly[recDialogDateStr] = allDone;
   
-  // 保存
+  // 【修复】先修复派生数据，再保存（遵循"先存档再重置"原则）
+  repairData();
   save();
   
   // 更新UI
   hideRecoveryDialog();
   renderRecoveryCalendar();
   updateRecoveryStats();
-  repairData(); // 修复派生数据
   initGame(); // 重新渲染主页
   
   alert('✅ 补录成功！');
@@ -3948,7 +3953,11 @@ function updateRecoveryStats() {
   let storyCount = 0;
   
   if (G.history) {
-    dayCount = Object.keys(G.history).filter(k => G.history[k].done).length;
+    // 【修复】兼容两种字段格式：allDone（新版补录）和 done（旧版/批量补录）
+    dayCount = Object.keys(G.history).filter(k => {
+      const rec = G.history[k];
+      return rec && (rec.allDone || rec.done);
+    }).length;
   }
   if (G.medals) {
     medalCount = G.medals.length;
@@ -3957,9 +3966,12 @@ function updateRecoveryStats() {
     storyCount = G.myStories.length;
   }
   
-  document.getElementById('recDayCount').textContent = dayCount;
-  document.getElementById('recMedalCount').textContent = medalCount;
-  document.getElementById('recStoryCount').textContent = storyCount;
+  const dayEl = document.getElementById('recDayCount');
+  const medalEl = document.getElementById('recMedalCount');
+  const storyEl = document.getElementById('recStoryCount');
+  if (dayEl) dayEl.textContent = dayCount;
+  if (medalEl) medalEl.textContent = medalCount;
+  if (storyEl) storyEl.textContent = storyCount;
 }
 
 // 显示批量补录对话框
@@ -3967,7 +3979,7 @@ function showBatchRecoverDialog() {
   document.getElementById('batchDialog').style.display = 'flex';
 }
 
-// 确认批量补录
+// 确认批量补录（修复版：保存完整数据结构，与单日补录格式一致）
 function confirmBatchRecover() {
   const startDate = document.getElementById('batchStartDate').value;
   const endDate = document.getElementById('batchEndDate').value;
@@ -3985,18 +3997,48 @@ function confirmBatchRecover() {
     return;
   }
   
+  // 限制批量补录不超过30天，避免误操作
+  const diffDays = Math.round((end - start) / (1000*60*60*24)) + 1;
+  if (diffDays > 30) {
+    alert('批量补录最多支持30天，请缩小日期范围！');
+    return;
+  }
+  
   if (!G.history) G.history = {};
+  if (!G.weekly) G.weekly = {};
   
   const current = new Date(start);
   let count = 0;
   while (current <= end) {
     const dateStr = current.toDateString();
-    G.history[dateStr] = { done: true, date: dateStr };
+    const dw = current.getDay();
+    const isJ = JUMP.includes(dw);
+    
+    // 【Bug4修复】保存完整数据结构，与 confirmRecovery() 格式一致
+    G.history[dateStr] = {
+      tasks: { sport: true, homework: true, study: true, outdoor: true },
+      gems: [],
+      habits: { fast: true, tidy: true, polite: true },
+      allDone: true,
+      done: true,  // 兼容旧版检测逻辑
+      story: null,
+      sportType: isJ ? 'jump' : 'swim',
+      jumpCount: isJ ? 1500 : 0,
+      swimDone: !isJ,
+      date: dateStr
+    };
+    
+    // 同步更新 weekly（用于勋章判断）
+    G.weekly[dateStr] = true;
+    
     count++;
     current.setDate(current.getDate() + 1);
   }
   
+  // 【修复】先修复派生数据，再保存（遵循"先存档再重置"原则）
+  repairData();
   save();
+  
   hideBatchDialog();
   renderRecoveryCalendar();
   updateRecoveryStats();
