@@ -40,20 +40,9 @@ function hasGitHubToken() {
   return token && token.length > 0;
 }
 
-// ===== Gist ID 管理 =====
-function saveGistId(user, gistId) {
-  localStorage.setItem('storyGame_gistId_' + user, gistId);
-  console.log('[Gist] ID 已保存, user=', user, ', id=', gistId);
-}
-
-function getGistId(user) {
-  return localStorage.getItem('storyGame_gistId_' + user) || '';
-}
-
-function clearGistId(user) {
-  localStorage.removeItem('storyGame_gistId_' + user);
-  console.log('[Gist] ID 已清除, user=', user);
-}
+// ===== 【v11.3】Gist ID 管理（新版本，支持三重备份） =====
+// 注意：第 208-219 行有新版本定义，使用常量 + 三重备份
+// 为避免过度加载，此处仅保留注释，实际函数体见第 208 行
 
 // ===== 【新增】自动发现 Gist =====
 async function discoverGist() {
@@ -1119,7 +1108,8 @@ async function cloudLoad(){
         
         const cloudIsNewer = cloudLastSync > localLastSync;
         
-        if(isFirstLoad || (cloudIsNewer && localLastSync > 0)){
+        // 【v11.4 修复】改为 if(false)，让智能合并分支永远执行，不再执行"完整恢复"（会导致一端数据丢失）
+        if(false){
           const mode = isFirstLoad ? '首次加载' : '云端更新(以云端/手机数据为准)';
           console.log('[cloudLoad]', mode, '，执行完整恢复...');
           
@@ -1162,22 +1152,39 @@ async function cloudLoad(){
           // 本地更新或时间相同：智能合并
           console.log('[cloudLoad] 本地数据较新或相同，执行智能合并...');
           
-          // 合并 history
+          // 【v11.4 修复】合并 history（正确的合并逻辑，而非覆盖）
           if(data.history){
             Object.keys(data.history).forEach(dateStr => {
               const cloudRec = data.history[dateStr];
               const localRec = G.history[dateStr];
+              
               if(!localRec){
+                // 本地没有这条记录，直接添加
                 G.history[dateStr] = cloudRec;
                 changed = true;
                 console.log('[cloudLoad] 合并缺失历史:', dateStr);
               } else if(cloudRec && cloudRec.tasks && localRec.tasks){
-                const cloudDone = Object.values(cloudRec.tasks).filter(v => v).length;
-                const localDone = Object.values(localRec.tasks).filter(v => v).length;
-                if(cloudDone > localDone){
-                  G.history[dateStr] = cloudRec;
+                // 两端都有这条记录，合并 tasks（OR 逻辑）
+                let tasksChanged = false;
+                Object.keys(localRec.tasks).forEach(k => {
+                  if(cloudRec.tasks[k] && !localRec.tasks[k]){
+                    localRec.tasks[k] = true;
+                    tasksChanged = true;
+                  }
+                });
+                // 合并 allDone（OR 逻辑）
+                if(cloudRec.allDone && !localRec.allDone){
+                  localRec.allDone = true;
+                  tasksChanged = true;
+                }
+                // 合并 story
+                if(cloudRec.story && !localRec.story){
+                  localRec.story = cloudRec.story;
+                  tasksChanged = true;
+                }
+                if(tasksChanged){
                   changed = true;
-                  console.log('[cloudLoad] 云端记录更完整，覆盖:', dateStr);
+                  console.log('[cloudLoad] 合并历史记录（OR 逻辑）:', dateStr);
                 }
               }
             });
@@ -1194,21 +1201,60 @@ async function cloudLoad(){
               }
             });
           }
-          // 合并今日数据
+          // 【v11.4 修复】合并今日数据（使用正确的合并逻辑，而非覆盖）
           const today = new Date().toDateString();
+          
+          // 合并今日任务（OR 逻辑：一端完成即为完成）
           if(data.date === today && G.date === today){
             if(data.tasks && G.tasks){
-              const cloudTaskDone = Object.values(data.tasks).filter(v => v).length;
-              const localTaskDone = Object.values(G.tasks).filter(v => v).length;
-              if(cloudTaskDone > localTaskDone){
-                G.tasks = {...G.tasks, ...data.tasks};
-                if(typeof data.jumpCount === 'number' && data.jumpCount > G.jumpCount) G.jumpCount = data.jumpCount;
-                if(data.swimDone && !G.swimDone) G.swimDone = true;
-                if(data.habits) G.habits = {...G.habits, ...data.habits};
-                if(Array.isArray(data.gems) && data.gems.length > G.gems.length) G.gems = [...data.gems];
+              let tasksChanged = false;
+              Object.keys(G.tasks).forEach(k => {
+                if(data.tasks[k] && !G.tasks[k]){
+                  G.tasks[k] = true;
+                  tasksChanged = true;
+                }
+              });
+              if(tasksChanged){
                 changed = true;
+                console.log('[cloudLoad] 合并今日任务（OR 逻辑）');
               }
             }
+          }
+          
+          // 合并 jumpCount（取最大值，谁跳得多用谁）
+          if(typeof data.jumpCount === 'number' && data.jumpCount > G.jumpCount){
+            G.jumpCount = data.jumpCount;
+            changed = true;
+            console.log('[cloudLoad] 合并 jumpCount=', G.jumpCount);
+          }
+          
+          // 合并 swimDone（OR 逻辑）
+          if(data.swimDone && !G.swimDone){
+            G.swimDone = true;
+            changed = true;
+            console.log('[cloudLoad] 合并 swimDone=true');
+          }
+          
+          // 合并 habits（OR 逻辑：一端完成即为完成）
+          if(data.habits && G.habits){
+            Object.keys(G.habits).forEach(k => {
+              if(data.habits[k] && !G.habits[k]){
+                G.habits[k] = true;
+                changed = true;
+              }
+            });
+          }
+          
+          // 合并 gems（并集：合并两端收集的宝石）
+          if(Array.isArray(data.gems)){
+            const existingKeys = new Set(G.gems.map(g => JSON.stringify(g)));
+            data.gems.forEach(g => {
+              const key = JSON.stringify(g);
+              if(!existingKeys.has(key)){
+                G.gems.push(g);
+                changed = true;
+              }
+            });
           }
           // 合并 collected 和 myStories
           if(Array.isArray(data.collected)){
