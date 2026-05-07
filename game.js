@@ -448,7 +448,7 @@ function save(){
   // 【v11.1】自动备份到 sessionStorage
   autoBackup();
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.3'};
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.5'};
   localStorage.setItem(key,JSON.stringify(data));
   console.log('[save] 已保存, history keys=',Object.keys(G.history).length,', weekly keys=',Object.keys(G.weekly).length);
   
@@ -1194,10 +1194,25 @@ async function cloudLoad(){
           isFirstLoad = false;
           console.log('[cloudLoad] 完整恢复完成, history keys=', Object.keys(G.history), ', weekly keys=', Object.keys(G.weekly));
         } else {
-          // 本地更新或时间相同：智能合并
-          console.log('[cloudLoad] 本地数据较新或相同，执行智能合并...');
+          // 【v11.5 修复】不管谁更新，都执行智能合并（双向合并，不丢失任何一端数据）
+          console.log('[cloudLoad] 执行智能合并... cloudIsNewer=', cloudIsNewer, ', 本地history keys=', Object.keys(G.history), ', 云端history keys=', data.history ? Object.keys(data.history) : []);
           
-          // 【v11.4 修复】合并 history（正确的合并逻辑，而非覆盖）
+          // 【v11.5】如果云端更新且本地不为空，用云端 weekly 补全本地（关键修复！）
+          // 之前只合并 history，但 weekly 是 streak 计算的基础
+          if(cloudIsNewer && data.weekly){
+            Object.keys(data.weekly).forEach(dateStr => {
+              const cloudVal = data.weekly[dateStr];
+              const localVal = G.weekly[dateStr];
+              // 云端更新时：本地没有该日期的记录，直接采用云端值
+              if(localVal === undefined || localVal === null){
+                G.weekly[dateStr] = cloudVal;
+                changed = true;
+                console.log('[cloudLoad] 云端更新，补全weekly:', dateStr, '=', cloudVal);
+              }
+            });
+          }
+          
+          // 合并 history（正确的合并逻辑，而非覆盖）
           if(data.history){
             Object.keys(data.history).forEach(dateStr => {
               const cloudRec = data.history[dateStr];
@@ -1402,7 +1417,7 @@ async function cloudLoad(){
     if(isFirstLoad){
       isFirstLoad = false;
       const key = SYNC_STORAGE_PREFIX + currentUser;
-      const data = {...G, _user: currentUser, _avatar: selectedAvatar, _lastSync: Date.now(), _version: 'v11.3'};
+      const data = {...G, _user: currentUser, _avatar: selectedAvatar, _lastSync: Date.now(), _version: 'v11.5'};
       localStorage.setItem(key, JSON.stringify(data));
       console.log('[cloudLoad] 首次加载云端失败，仅保存到本地（不覆盖云端）');
     }
@@ -1461,7 +1476,7 @@ async function manualSync(){
     
     // 步骤2：准备数据
     console.log('[manualSync] 步骤2/3：准备数据...');
-    const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.3'};
+    const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.5'};
     console.log('[manualSync] 数据大小:', JSON.stringify(data).length, 'bytes');
     
     // 步骤3：上传到云端
@@ -1512,7 +1527,7 @@ function exportData(){
     _user: currentUser,
     _avatar: selectedAvatar,
     _lastSync: Date.now(),
-    _version: 'v11.3'
+    _version: 'v11.5'
   };
   
   const json = JSON.stringify(data, null, 2);
@@ -1683,7 +1698,7 @@ async function doLogin(){
     if(!currentUser)return;
     try{
       await cloudLoad();
-      await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.3'});
+      await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.5'});
     }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
   },30000);
 }
@@ -1722,7 +1737,7 @@ function clearAllCheckInData(){
   
   // 4. 同步空数据到云端（清除云端打卡记录）
   if(hasGitHubToken()){
-    cloudSave({...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.3'}).then(()=>{
+    cloudSave({...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.5'}).then(()=>{
       console.log('[clearAllCheckInData] ✅ 云端数据也已清除');
       showToast('✅ 所有数据已清除，云端同步完成！');
     }).catch(e=>{
@@ -2684,7 +2699,7 @@ function checkWeeklyMedal(){
   
   // 保存（不再递归调用 save，直接本地保存）
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.3'};
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.5'};
   localStorage.setItem(key,JSON.stringify(data));
   cloudSave(data);
   
@@ -3385,42 +3400,58 @@ function initGame(){
       // 【v10.0】先拉取云端最新数据合并，再上传（避免覆盖其他设备的新数据）
       try{
         await cloudLoad();
-        await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.3'});
+        await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.5'});
       }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
     },300000); // 5 分钟 = 300000 毫秒
     
-    // 【v11.4 修复】页面切回前台时立即同步云端数据（解决多端切换时数据不更新的问题）
-    let lastVisibilitySync = Date.now();
+    // 【v11.5 修复】页面切回前台时立即同步云端数据（解决多端切换时数据不更新的问题）
+    let lastVisibilitySync = 0; // 改为0，确保首次切回一定触发
     document.addEventListener('visibilitychange', async () => {
       if(document.visibilityState === 'visible' && currentUser){
-        // 避免频繁触发：切回前台后至少间隔30秒才再次同步
+        // 避免频繁触发：切回前台后至少间隔15秒才再次同步（从30秒缩短到15秒）
         const now = Date.now();
-        if(now - lastVisibilitySync < 30000) {
-          console.log('[visibilitySync] 距上次同步不足30秒，跳过');
+        if(now - lastVisibilitySync < 15000) {
+          console.log('[visibilitySync] 距上次同步不足15秒，跳过');
           return;
         }
         lastVisibilitySync = now;
         console.log('[visibilitySync] 页面切回前台，立即拉取云端数据...');
+        const beforeWeekly = JSON.stringify(G.weekly);
+        const beforeHistory = Object.keys(G.history).length;
         try {
-          await cloudLoad();
+          const result = await cloudLoad();
+          const afterWeekly = JSON.stringify(G.weekly);
+          const afterHistory = Object.keys(G.history).length;
           initGame();
-          console.log('[visibilitySync] ✅ 云端数据已同步');
+          if(result){
+            showSyncToast('☁️ 已从其他设备同步新数据', 'success');
+          } else if(beforeWeekly !== afterWeekly || beforeHistory !== afterHistory){
+            showSyncToast('☁️ 数据已更新', 'success');
+          } else {
+            console.log('[visibilitySync] 云端无新数据');
+          }
+          console.log('[visibilitySync] ✅ 同步完成, weekly变化:', beforeWeekly !== afterWeekly, ', history条数:', beforeHistory, '→', afterHistory);
         } catch(e) {
           console.log('[visibilitySync] ⚠️ 同步失败:', e.message);
+          showSyncToast('⚠️ 同步失败: ' + e.message, 'warning');
         }
       }
     });
     
-    // 【v11.4 修复】窗口获得焦点时也触发同步（覆盖标签页切换+窗口切换两种场景）
+    // 【v11.5 修复】窗口获得焦点时也触发同步（覆盖标签页切换+窗口切换两种场景）
     window.addEventListener('focus', async () => {
       if(!currentUser) return;
       const now = Date.now();
-      if(now - lastVisibilitySync < 30000) return; // 复用同一个防抖计时器
+      if(now - lastVisibilitySync < 15000) return; // 复用同一个防抖计时器
       lastVisibilitySync = now;
       console.log('[focusSync] 窗口获得焦点，拉取云端数据...');
+      const beforeWeekly = JSON.stringify(G.weekly);
       try {
-        await cloudLoad();
+        const result = await cloudLoad();
         initGame();
+        if(result || JSON.stringify(G.weekly) !== beforeWeekly){
+          showSyncToast('☁️ 已从其他设备同步新数据', 'success');
+        }
         console.log('[focusSync] ✅ 云端数据已同步');
       } catch(e) {
         console.log('[focusSync] ⚠️ 同步失败:', e.message);
@@ -4037,7 +4068,7 @@ function hideRecoveryDialog() {
 
 // 确认补录
 // 确认补录（重构版）
-function confirmRecovery() {
+async function confirmRecovery() {
   if (!recDialogDateStr || !recDialogData) {
     alert('⚠️ 补录数据异常，请重新打开对话框');
     return;
@@ -4099,7 +4130,32 @@ function confirmRecovery() {
   
   // 【修复】先修复派生数据，再保存（遵循"先存档再重置"原则）
   repairData();
-  save();
+  
+  // 【v11.5 关键修复】补录后必须等待云端同步完成，不能 fire-and-forget
+  // 先保存到本地
+  const key = SYNC_STORAGE_PREFIX + currentUser;
+  const data = {...G, _user: currentUser, _avatar: selectedAvatar, _lastSync: Date.now(), _version: 'v11.5'};
+  localStorage.setItem(key, JSON.stringify(data));
+  autoBackup();
+  
+  // 显式等待云端同步完成（这是之前 Bug 的根因：save() 中的 cloudSave 是 fire-and-forget，用户关页面就丢了）
+  let cloudSuccess = false;
+  if (hasGitHubToken()) {
+    showSyncToast('⏳ 正在同步到云端...', 'success');
+    try {
+      cloudSuccess = await cloudSave(data);
+      if (cloudSuccess) {
+        console.log('[confirmRecovery] ✅ 补录数据已成功同步到云端');
+        showSyncToast('✅ 补录数据已同步到云端，其他设备可以看到了', 'success');
+      } else {
+        console.warn('[confirmRecovery] ⚠️ 云端同步返回失败');
+        showSyncToast('⚠️ 云端同步失败，请稍后手动点击同步按钮', 'warning');
+      }
+    } catch(e) {
+      console.error('[confirmRecovery] ❌ 云端同步异常:', e.message);
+      showSyncToast('❌ 云端同步失败: ' + e.message + '，请检查网络后手动同步', 'error');
+    }
+  }
   
   // 更新UI
   hideRecoveryDialog();
@@ -4107,7 +4163,13 @@ function confirmRecovery() {
   updateRecoveryStats();
   initGame(); // 重新渲染主页
   
-  alert('✅ 补录成功！');
+  if (cloudSuccess) {
+    alert('✅ 补录成功！数据已同步到云端 ☁️');
+  } else if (hasGitHubToken()) {
+    alert('✅ 补录已保存到本地！\n⚠️ 但云端同步失败，请确保网络正常后点击同步按钮，否则其他设备看不到此次补录。');
+  } else {
+    alert('✅ 补录成功！（未配置云端同步）');
+  }
 }
 
 // 更新补录统计
