@@ -3545,7 +3545,7 @@ function renderRecTasks() {
   const dw = new Date(recDialogDateStr).getDay();
   const isJ = JUMP.includes(dw);
   const tasks = [
-    { k: 'sport', e: isJ ? '🏃‍♀️' : '🏊‍♀️', t: isJ ? `跳绳 ${G.jumpCount}/1500` : '完成游泳课', d: isJ ? '今天是跳绳日！加油！' : '今天是游泳日！加油！', g: isJ ? '🧡' : '💙' },
+    { k: 'sport', e: isJ ? '🏃‍♀️' : '🏊‍♀️', t: isJ ? `跳绳 ${G.jumpCount}/1500` : '完成游泳课', d: isJ ? '这是跳绳日！加油！' : '这是游泳日！加油！', g: isJ ? '🧡' : '💙' },
     { k: 'homework', e: '📝', t: '认真高效完成学校作业', d: '专注写作业，不拖拉不磨蹭', g: '💜' },
     { k: 'study', e: '📖', t: '认真学习英语', d: '专注高效，认真完成学习任务', g: '💛' },
     { k: 'outdoor', e: '⭐', t: '今日行为习惯达标', d: '做事快速、吃维生素D、早睡', g: '💚' }
