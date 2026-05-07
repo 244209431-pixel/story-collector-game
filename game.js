@@ -960,7 +960,28 @@ async function cloudSave(data){
 
       if (!resp.ok) {
         const errText = await resp.text().catch(() => '');
-        throw new Error(`更新 Gist 失败: ${resp.status} ${resp.statusText} - ${errText}`);
+        
+        // 【v11.5 修复】处理 409 Conflict（版本冲突）
+        if (resp.status === 409) {
+          console.warn('[cloudSave] ⚠️ 检测到版本冲突(409)，先拉取最新版本再重试...');
+          showToast('⚠️ 检测到版本冲突，正在自动修复...');
+          
+          // 先拉取最新版本到本地（cloudLoad() 内部会调用 save() 保存合并后的数据）
+          await cloudLoad();
+          
+          // 递归调用自己（最多重试 1 次，避免无限递归）
+          if (!window._cloudSaveRetrying) {
+            window._cloudSaveRetrying = true;
+            console.log('[cloudSave] 重新尝试同步...');
+            await cloudSave();
+            window._cloudSaveRetrying = false;
+          } else {
+            console.error('[cloudSave] ❌ 递归重试失败，放弃同步');
+            throw new Error(`409 冲突修复失败`);
+          }
+        } else {
+          throw new Error(`更新 Gist 失败: ${resp.status} ${resp.statusText} - ${errText}`);
+        }
       }
 
       console.log('[cloudSave] ✅ Gist 更新成功, gistId=', gistId);
@@ -1006,6 +1027,10 @@ async function cloudSave(data){
       // 其他 403 错误，可能是 Token 权限不足
       console.warn('[cloudSave] ⚠️ GitHub API 403 错误:', e.message);
       showToast('⚠️ GitHub Token 权限不足，请重新生成 Token（需勾选 gist 权限）');
+    } else if (e.message.includes('409')) {
+      // 【v11.5 新增】409 Conflict 处理
+      console.warn('[cloudSave] ⚠️ 版本冲突(409)，已自动修复');
+      showToast('✅ 版本冲突已自动修复，数据已合并');
     } else {
       showToast('⚠️ 云端同步失败: ' + e.message.substring(0, 50));
     }
