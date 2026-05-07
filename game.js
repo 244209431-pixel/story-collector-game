@@ -410,6 +410,9 @@ function makeDefaultState(){
 let G=makeDefaultState();
 
 // ===== 保存 =====
+// 【v11.6】添加全局标志，用于控制 startup 阶段不触发 cloudSave（防止竞态覆盖云端数据）
+let _cloudSaveEnabled = false; // startup 完成 cloudLoad 后才设为 true
+
 function save(){
   if(!currentUser)return;
   if(!G.history) G.history={};
@@ -448,15 +451,33 @@ function save(){
   // 【v11.1】自动备份到 sessionStorage
   autoBackup();
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.5'};
+  // 【v11.6 关键修复】save() 中不再更新 _lastSync 为 Date.now()
+  // 而是保留上一次从云端同步得到的时间戳，避免"假更新"导致 cloudLoad 判断失误
+  const existingLastSync = (() => {
+    try {
+      const existing = localStorage.getItem(key);
+      if(existing) { const d = JSON.parse(existing); return d._lastSync || 0; }
+    } catch(e) {}
+    return 0;
+  })();
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:existingLastSync, _version:'v11.6'};
   localStorage.setItem(key,JSON.stringify(data));
-  console.log('[save] 已保存, history keys=',Object.keys(G.history).length,', weekly keys=',Object.keys(G.weekly).length);
+  console.log('[save] 已保存, history keys=',Object.keys(G.history).length,', weekly keys=',Object.keys(G.weekly).length, ', _cloudSaveEnabled=', _cloudSaveEnabled);
   
-  // 【修复】打卡后立即同步到云端（带重试+用户提示）
-  if (hasGitHubToken()) {
-    cloudSave(data).then(success => {
+  // 【v11.6 修复】只有在 cloudLoad 完成后才允许 save 触发 cloudSave
+  // 防止 startup 阶段 load()→save() 的异步 cloudSave 用旧数据覆盖云端
+  if (_cloudSaveEnabled && hasGitHubToken()) {
+    // cloudSave 时使用 Date.now() 作为真正的同步时间戳
+    const uploadData = {...data, _lastSync: Date.now()};
+    cloudSave(uploadData).then(success => {
       if (success) {
         console.log('[save] ✅ 云端同步成功');
+        // 更新本地的 _lastSync 为上传成功的时间
+        try {
+          const cur = JSON.parse(localStorage.getItem(key));
+          cur._lastSync = uploadData._lastSync;
+          localStorage.setItem(key, JSON.stringify(cur));
+        } catch(e){}
         showSyncToast('✅ 数据已同步到云端', 'success');
       } else {
         console.warn('[save] ⚠️ 云端同步失败，将依赖自动同步');
@@ -466,6 +487,8 @@ function save(){
       console.error('[save] ❌ 云端同步异常:', e.message);
       showSyncToast('❌ 云端同步异常: ' + e.message, 'error');
     });
+  } else if(!_cloudSaveEnabled) {
+    console.log('[save] ⏳ startup 阶段，跳过 cloudSave（等待 cloudLoad 完成后再允许上传）');
   }
   
   // 【v10.0】每次保存后检测勋章（异步，不阻塞保存流程）
@@ -1194,23 +1217,8 @@ async function cloudLoad(){
           isFirstLoad = false;
           console.log('[cloudLoad] 完整恢复完成, history keys=', Object.keys(G.history), ', weekly keys=', Object.keys(G.weekly));
         } else {
-          // 【v11.5 修复】不管谁更新，都执行智能合并（双向合并，不丢失任何一端数据）
-          console.log('[cloudLoad] 执行智能合并... cloudIsNewer=', cloudIsNewer, ', 本地history keys=', Object.keys(G.history), ', 云端history keys=', data.history ? Object.keys(data.history) : []);
-          
-          // 【v11.5】如果云端更新且本地不为空，用云端 weekly 补全本地（关键修复！）
-          // 之前只合并 history，但 weekly 是 streak 计算的基础
-          if(cloudIsNewer && data.weekly){
-            Object.keys(data.weekly).forEach(dateStr => {
-              const cloudVal = data.weekly[dateStr];
-              const localVal = G.weekly[dateStr];
-              // 云端更新时：本地没有该日期的记录，直接采用云端值
-              if(localVal === undefined || localVal === null){
-                G.weekly[dateStr] = cloudVal;
-                changed = true;
-                console.log('[cloudLoad] 云端更新，补全weekly:', dateStr, '=', cloudVal);
-              }
-            });
-          }
+          // 【v11.6 修复】无条件双向智能合并（不再依赖 cloudIsNewer，彻底解决竞态条件）
+          console.log('[cloudLoad] 执行智能合并... cloudIsNewer=', cloudIsNewer, ', 本地history keys=', Object.keys(G.history), ', 云端history keys=', data.history ? Object.keys(data.history) : [], ', 本地weekly=', JSON.stringify(G.weekly), ', 云端weekly=', JSON.stringify(data.weekly));
           
           // 合并 history（正确的合并逻辑，而非覆盖）
           if(data.history){
@@ -1379,12 +1387,24 @@ async function cloudLoad(){
         }
         
         if(changed){
-          console.log('[cloudLoad] 数据已更新，执行修复并保存');
+          console.log('[cloudLoad] ✅ 数据已更新(合并了云端数据)，执行修复并保存');
           repairData();
-          save();
+          // 【v11.6】合并完成后，更新本地 _lastSync 为合并后的时间戳
+          // 这样下次 cloudLoad 时不会因为时间戳过旧而重复合并
+          const mergedTime = Math.max(cloudLastSync, localLastSync, Date.now());
+          const key = SYNC_STORAGE_PREFIX + currentUser;
+          const mergedData = {...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:mergedTime, _version:'v11.6'};
+          localStorage.setItem(key, JSON.stringify(mergedData));
+          // 同时上传合并结果到云端（此时允许 cloudSave，因为是合并后的完整数据）
+          if(hasGitHubToken()){
+            cloudSave(mergedData).then(ok => {
+              if(ok) console.log('[cloudLoad] ✅ 合并结果已上传到云端');
+              else console.warn('[cloudLoad] ⚠️ 合并结果上传失败');
+            }).catch(e => console.error('[cloudLoad] ❌ 合并结果上传异常:', e.message));
+          }
           initGame();
         } else {
-          console.log('[cloudLoad] 云端无新数据需要合并');
+          console.log('[cloudLoad] 云端无新数据需要合并 (本地weekly=', JSON.stringify(G.weekly), ')');
         }
         updateSyncUI('done');
         return changed;
@@ -1417,7 +1437,7 @@ async function cloudLoad(){
     if(isFirstLoad){
       isFirstLoad = false;
       const key = SYNC_STORAGE_PREFIX + currentUser;
-      const data = {...G, _user: currentUser, _avatar: selectedAvatar, _lastSync: Date.now(), _version: 'v11.5'};
+      const data = {...G, _user: currentUser, _avatar: selectedAvatar, _lastSync: Date.now(), _version: 'v11.6'};
       localStorage.setItem(key, JSON.stringify(data));
       console.log('[cloudLoad] 首次加载云端失败，仅保存到本地（不覆盖云端）');
     }
@@ -1476,7 +1496,7 @@ async function manualSync(){
     
     // 步骤2：准备数据
     console.log('[manualSync] 步骤2/3：准备数据...');
-    const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.5'};
+    const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.6'};
     console.log('[manualSync] 数据大小:', JSON.stringify(data).length, 'bytes');
     
     // 步骤3：上传到云端
@@ -1527,7 +1547,7 @@ function exportData(){
     _user: currentUser,
     _avatar: selectedAvatar,
     _lastSync: Date.now(),
-    _version: 'v11.5'
+    _version: 'v11.6'
   };
   
   const json = JSON.stringify(data, null, 2);
@@ -1698,7 +1718,7 @@ async function doLogin(){
     if(!currentUser)return;
     try{
       await cloudLoad();
-      await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.5'});
+      await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.6'});
     }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
   },30000);
 }
@@ -1737,7 +1757,7 @@ function clearAllCheckInData(){
   
   // 4. 同步空数据到云端（清除云端打卡记录）
   if(hasGitHubToken()){
-    cloudSave({...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.5'}).then(()=>{
+    cloudSave({...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.6'}).then(()=>{
       console.log('[clearAllCheckInData] ✅ 云端数据也已清除');
       showToast('✅ 所有数据已清除，云端同步完成！');
     }).catch(e=>{
@@ -2699,7 +2719,7 @@ function checkWeeklyMedal(){
   
   // 保存（不再递归调用 save，直接本地保存）
   const key=SYNC_STORAGE_PREFIX+currentUser;
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.5'};
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:Date.now(), _version:'v11.6'};
   localStorage.setItem(key,JSON.stringify(data));
   cloudSave(data);
   
@@ -3382,11 +3402,15 @@ function initGame(){
     
     // 然后在后台静默同步云端数据（不阻塞界面）
     cloudLoad().then(()=>{
+      // 【v11.6】cloudLoad 完成后才允许 save() 触发 cloudSave
+      _cloudSaveEnabled = true;
       // 云端数据加载完后重新渲染一次以确保数据最新
       initGame();
-      console.log('[startup] 云端数据同步完成');
+      console.log('[startup] ✅ 云端数据同步完成，_cloudSaveEnabled=true');
     }).catch(e=>{
-      console.log('[startup] 云端加载失败，使用本地数据',e);
+      // 即使云端加载失败，也要允许后续保存同步到云端
+      _cloudSaveEnabled = true;
+      console.log('[startup] 云端加载失败，但仍允许后续同步. 使用本地数据',e);
     });
     
     // 移除内联快速登录样式（正常 JS 已接管控制）
@@ -3400,7 +3424,7 @@ function initGame(){
       // 【v10.0】先拉取云端最新数据合并，再上传（避免覆盖其他设备的新数据）
       try{
         await cloudLoad();
-        await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.5'});
+        await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.6'});
       }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
     },300000); // 5 分钟 = 300000 毫秒
     
@@ -4134,7 +4158,7 @@ async function confirmRecovery() {
   // 【v11.5 关键修复】补录后必须等待云端同步完成，不能 fire-and-forget
   // 先保存到本地
   const key = SYNC_STORAGE_PREFIX + currentUser;
-  const data = {...G, _user: currentUser, _avatar: selectedAvatar, _lastSync: Date.now(), _version: 'v11.5'};
+  const data = {...G, _user: currentUser, _avatar: selectedAvatar, _lastSync: Date.now(), _version: 'v11.6'};
   localStorage.setItem(key, JSON.stringify(data));
   autoBackup();
   
