@@ -3431,7 +3431,7 @@ function showRecoveryDialog(date) {
     tasks: { sport: false, homework: false, study: false, outdoor: false },
     gems: [],
     story: null,
-    habits: { vitaminD: false, quickAction: false, earlySleep: false },
+    habits: { fast: false, tidy: false, polite: false },
     allDone: false,
     medalRedeemed: false
   };
@@ -3625,18 +3625,19 @@ function renderRecHabits() {
   const l = document.getElementById('recHabitsList');
   if (!l) return;
   
+  // 【修复】键名与主页面 G.habits 保持一致：fast/tidy/polite
   const habits = [
-    { k: 'vitaminD', t: '吃维生素D', i: '💊' },
-    { k: 'quickAction', t: '做事快速不磨蹭', i: '⚡' },
-    { k: 'earlySleep', t: '早睡（10点前上床）', i: '🌙' }
+    { k: 'fast', t: '做事快速不磨蹭', i: '⚡' },
+    { k: 'tidy', t: '吃维生素D', i: '🥛' },
+    { k: 'polite', t: '早睡（10点前上床）', i: '🌙' }
   ];
   
   l.innerHTML = habits.map(h => {
     const done = recDialogData.habits[h.k];
-    return `<div class="habit-item ${done ? 'done' : ''}" onclick="recToggleHabit('${h.k}')">
-      <div class="habit-cb">${done ? '✓' : ''}</div>
-      <span class="habit-icon">${h.i}</span>
-      <span class="habit-text">${h.t}</span>
+    return `<div class="task-item ${done ? 'done' : ''}" onclick="recToggleHabit('${h.k}')">
+      <div class="task-cb">${done ? '✓' : ''}</div>
+      <div class="task-em">${h.i}</div>
+      <div class="task-info"><h4>${h.t}</h4></div>
     </div>`;
   }).join('');
 }
