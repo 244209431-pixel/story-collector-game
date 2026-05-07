@@ -452,16 +452,19 @@ function save(){
   localStorage.setItem(key,JSON.stringify(data));
   console.log('[save] 已保存, history keys=',Object.keys(G.history).length,', weekly keys=',Object.keys(G.weekly).length);
   
-  // 【修复】打卡后立即同步到云端（带重试）
+  // 【修复】打卡后立即同步到云端（带重试+用户提示）
   if (hasGitHubToken()) {
     cloudSave(data).then(success => {
       if (success) {
         console.log('[save] ✅ 云端同步成功');
+        showSyncToast('✅ 数据已同步到云端', 'success');
       } else {
         console.warn('[save] ⚠️ 云端同步失败，将依赖自动同步');
+        showSyncToast('⚠️ 云端同步失败，稍后自动重试', 'warning');
       }
     }).catch(e => {
       console.error('[save] ❌ 云端同步异常:', e.message);
+      showSyncToast('❌ 云端同步异常: ' + e.message, 'error');
     });
   }
   
@@ -1592,6 +1595,22 @@ function showToast(msg){
   }
   t.textContent=msg;t.style.opacity=1;
   setTimeout(()=>{t.style.opacity=0},3000);
+}
+
+// 【v11.4】同步状态提示（带颜色区分）
+function showSyncToast(msg, type='info'){
+  let t=document.getElementById('syncStatusToast');
+  if(!t){
+    t=document.createElement('div');
+    t.id='syncStatusToast';
+    t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);color:white;padding:10px 20px;border-radius:16px;font-size:13px;z-index:9999;transition:opacity 0.5s;pointer-events:none;backdrop-filter:blur(10px);max-width:80%;text-align:center;';
+    document.body.appendChild(t);
+  }
+  const colors = { success:'rgba(34,139,34,0.9)', warning:'rgba(200,150,0,0.9)', error:'rgba(200,50,50,0.9)', info:'rgba(0,0,0,0.8)' };
+  t.style.background = colors[type] || colors.info;
+  t.textContent = msg;
+  t.style.opacity = 1;
+  setTimeout(()=>{t.style.opacity=0}, type==='error'? 5000 : 2500);
 }
 
 // ===== 登录 =====
@@ -3369,6 +3388,45 @@ function initGame(){
         await cloudSave({...G,_user:currentUser,_avatar:selectedAvatar,_lastSync:Date.now(),_version:'v11.3'});
       }catch(e){console.log('[autoSync] 自动同步失败:',e.message);}
     },300000); // 5 分钟 = 300000 毫秒
+    
+    // 【v11.4 修复】页面切回前台时立即同步云端数据（解决多端切换时数据不更新的问题）
+    let lastVisibilitySync = Date.now();
+    document.addEventListener('visibilitychange', async () => {
+      if(document.visibilityState === 'visible' && currentUser){
+        // 避免频繁触发：切回前台后至少间隔30秒才再次同步
+        const now = Date.now();
+        if(now - lastVisibilitySync < 30000) {
+          console.log('[visibilitySync] 距上次同步不足30秒，跳过');
+          return;
+        }
+        lastVisibilitySync = now;
+        console.log('[visibilitySync] 页面切回前台，立即拉取云端数据...');
+        try {
+          await cloudLoad();
+          initGame();
+          console.log('[visibilitySync] ✅ 云端数据已同步');
+        } catch(e) {
+          console.log('[visibilitySync] ⚠️ 同步失败:', e.message);
+        }
+      }
+    });
+    
+    // 【v11.4 修复】窗口获得焦点时也触发同步（覆盖标签页切换+窗口切换两种场景）
+    window.addEventListener('focus', async () => {
+      if(!currentUser) return;
+      const now = Date.now();
+      if(now - lastVisibilitySync < 30000) return; // 复用同一个防抖计时器
+      lastVisibilitySync = now;
+      console.log('[focusSync] 窗口获得焦点，拉取云端数据...');
+      try {
+        await cloudLoad();
+        initGame();
+        console.log('[focusSync] ✅ 云端数据已同步');
+      } catch(e) {
+        console.log('[focusSync] ⚠️ 同步失败:', e.message);
+      }
+    });
+    
   }else{
     // 未登录 —— 显示登录页面
     document.getElementById('loginOverlay').style.display='';
