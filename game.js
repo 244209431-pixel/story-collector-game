@@ -3376,6 +3376,7 @@ function showRecoveryDialog(date) {
   }
   
   // 渲染各个部分
+  renderRecSportCard();  // 先渲染运动卡片（今日跳绳日/游泳日）
   renderRecGems();
   renderRecTasks();
   renderRecStoryBook();
@@ -3409,6 +3410,57 @@ function renderRecGems() {
       <span class="gl">${gm.n}</span>
     </div>`;
   }).join('');
+}
+
+// 渲染补录对话框的运动卡片（今日跳绳日/游泳日标题）
+function renderRecSportCard() {
+  const container = document.getElementById('recSportCardContainer');
+  if (!container) return;
+  
+  const dw = new Date(recDialogDateStr).getDay();
+  const isJ = JUMP.includes(dw);
+  const sportDone = recDialogData.tasks.sport;
+  
+  let html = '';
+  if (isJ) {
+    // 跳绳日
+    html = `<div class="sport-card jc" style="margin-bottom:12px">
+      <div class="sport-head">
+        <div class="sport-icon">🏃‍♀️</div>
+        <div class="sport-info">
+          <h3>今日跳绳日 🎯</h3>
+          <p>目标：跳满 1500 个</p>
+        </div>
+        <div style="margin-left:auto;font-size:28px">${sportDone ? '✅' : '⏳'}</div>
+      </div>
+      <div class="progress-bg">
+        <div class="progress-fill" style="width:${sportDone ? 100 : 0}%"></div>
+      </div>
+      <div class="progress-txt">
+        <span>${sportDone ? '已完成跳绳任务' : '点击任务列表勾选完成'}</span>
+      </div>
+    </div>`;
+  } else {
+    // 游泳日
+    html = `<div class="sport-card sc" style="margin-bottom:12px">
+      <div class="sport-head">
+        <div class="sport-icon">🏊‍♀️</div>
+        <div class="sport-info">
+          <h3>今日游泳日 🌊</h3>
+          <p>完成今日游泳课</p>
+        </div>
+        <div style="margin-left:auto;font-size:28px">${sportDone ? '✅' : '⏳'}</div>
+      </div>
+      <div class="progress-bg">
+        <div class="progress-fill" style="width:${sportDone ? 100 : 0}%"></div>
+      </div>
+      <div class="progress-txt">
+        <span>${sportDone ? '游泳课已完成' : '点击任务列表勾选完成'}</span>
+      </div>
+    </div>`;
+  }
+  
+  container.innerHTML = html;
 }
 
 // 渲染补录对话框的任务列表
@@ -3576,6 +3628,7 @@ function recToggleGem(k) {
     recDialogData.gems = recDialogData.gems.filter(g => g !== k);
   }
   
+  renderRecSportCard();  // 更新运动卡片
   renderRecGems();
   renderRecTasks();
   renderRecStoryBook();
@@ -3595,6 +3648,7 @@ function recToggleTask(k) {
     recDialogData.gems = recDialogData.gems.filter(g => g !== k);
   }
   
+  renderRecSportCard();  // 更新运动卡片
   renderRecGems();
   renderRecTasks();
   renderRecStoryBook();
