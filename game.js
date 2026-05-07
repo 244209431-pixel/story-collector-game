@@ -2077,6 +2077,13 @@ function showHistoryDetail(dateStr){
   
   const gemsCount=hist.gems?hist.gems.length:0;
   
+  // 保存故事到临时变量，供点击查看
+  if (hist.story) {
+    window._tempHistStory = {title: hist.storyTitle || '今日故事', text: hist.story};
+  } else {
+    window._tempHistStory = null;
+  }
+  
   panel.innerHTML=`<div class="history-header">
     <h3>📅 ${dateLabel}</h3>
     <button class="history-close" onclick="closeHistoryPanel()">✕</button>
@@ -2131,10 +2138,11 @@ function showHistoryDetail(dateStr){
   <!-- 今日故事 -->
   ${hist.story?`<div class="card" style="margin-bottom:12px">
     <h4 style="font-size:15px;margin-bottom:8px">📖 今日故事</h4>
-    <div class="story-book" style="padding:16px">
+    <div class="story-book" style="padding:16px;cursor:pointer" onclick="if(window._tempHistStory) showStoryModal(window._tempHistStory)">
       <span class="book-icon">📚</span>
       <h4>${hist.storyTitle||'今日故事'}</h4>
-      <p style="font-size:13px;line-height:1.6;color:var(--t2)">${hist.story}</p>
+      <p style="font-size:13px;line-height:1.6;color:var(--t2)">${hist.story.substring(0,50)}${hist.story.length>50?'...':''}</p>
+      <div style="text-align:center;margin-top:8px;color:var(--purple);font-size:12px">点击查看完整故事 →</div>
     </div>
   </div>`:''}
   
@@ -3573,6 +3581,9 @@ function renderRecStoryBook() {
     const textInput = document.getElementById('recStoryTextInput');
     if (titleInput) titleInput.value = story.title || '';
     if (textInput) textInput.value = story.text || '';
+    
+    // 修改按钮行为：点击查看故事（与当天打卡交互一致）
+    btnEl.onclick = () => showStoryModal(recDialogData.story);
   } else if (done >= total) {
     btnEl.disabled = false;
     btnEl.textContent = '✨ 解锁今日故事！';
@@ -3664,10 +3675,18 @@ function renderRecMedalSection() {
 // 切换宝石状态
 function recToggleGem(k) {
   if (k === 'story') {
-    // 故事宝石：尝试解锁故事
-    const done = Object.values(recDialogData.tasks).filter(v => v).length;
-    if (done >= 4) {
-      recUnlockStory();
+    // 故事宝石：如果已解锁则查看故事，否则尝试解锁
+    if (recDialogData.story) {
+      // 故事已解锁，点击查看故事（与当天打卡交互一致）
+      showStoryModal(recDialogData.story);
+    } else {
+      // 故事未解锁，尝试解锁
+      const done = Object.values(recDialogData.tasks).filter(v => v).length;
+      if (done >= 4) {
+        recUnlockStory();
+      } else {
+        alert('⚠️ 请先完成所有任务，集满宝石！');
+      }
     }
     return;
   }
