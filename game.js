@@ -3493,9 +3493,21 @@ function showRecoveryDialog(date) {
     const hist = G.history[recDialogDateStr];
     recDialogData.tasks = { ...recDialogData.tasks, ...hist.tasks };
     recDialogData.gems = hist.gems ? [...hist.gems] : [];
-    recDialogData.story = hist.story || null;
     recDialogData.habits = { ...recDialogData.habits, ...hist.habits };
     recDialogData.allDone = hist.allDone || false;
+    
+    // 【修复】恢复故事时确保使用系统故事（带 choices 选择结局）
+    if (hist.story) {
+      if (hist.story.choices && hist.story.choices.length) {
+        // 已经是系统故事，直接恢复
+        recDialogData.story = hist.story;
+      } else {
+        // 手动录入的故事没有 choices，重新分配系统故事
+        recDialogData.story = pickSystemStoryForDate(recDialogDateStr);
+      }
+    } else {
+      recDialogData.story = null;
+    }
   }
   
   // 【修复】确保 outdoor 任务状态与习惯完成情况同步
@@ -3654,20 +3666,20 @@ function renderRecStoryBook() {
   if (recDialogData.story) {
     btnEl.disabled = false;
     const story = recDialogData.story;
-    const isManual = story.text && story.text.length > 50; // 手动录入的故事通常有较长内容
+    const hasChoices = story.choices && story.choices.length;
     
-    btnEl.textContent = isManual ? '📖 查看已录故事' : '📖 查看已选故事';
-    titleEl.textContent = '✅ 今日故事已保存！';
+    btnEl.textContent = hasChoices ? '📖 查看故事 & 选择结局' : '📖 查看已录故事';
+    titleEl.textContent = '✅ 今日故事已解锁！';
     previewEl.textContent = story.title || '故事已收集';
     
-    // 填充输入框，让用户可以修改
+    // 填充输入框（手动录入区域，让用户可以修改或查看）
     const titleInput = document.getElementById('recStoryTitleInput');
     const textInput = document.getElementById('recStoryTextInput');
     if (titleInput) titleInput.value = story.title || '';
     if (textInput) textInput.value = story.text || '';
     
-    // 修改按钮行为：点击查看故事（与当天打卡交互一致）
-    btnEl.onclick = () => showStoryModal(recDialogData.story);
+    // 修改按钮行为：点击查看故事（与当天打卡交互一致，带庆祝动画）
+    btnEl.onclick = () => { showStoryModal(recDialogData.story); bigConfetti(); };
   } else if (done >= total) {
     btnEl.disabled = false;
     btnEl.textContent = '✨ 解锁今日故事！';
@@ -3814,16 +3826,9 @@ function recToggleTask(k) {
   renderRecStoryBook();
 }
 
-// 解锁故事
-function recUnlockStory() {
-  // 检查是否已选择故事
-  if (recDialogData.story) {
-    showStoryModal(recDialogData.story);
-    return;
-  }
-  
-  // 从故事池选择故事
-  const dw = new Date(recDialogDateStr).getDay();
+// 【辅助】从故事池为指定日期选一个系统故事（带 choices）
+function pickSystemStoryForDate(dateStr) {
+  const dw = new Date(dateStr).getDay();
   const isJ = JUMP.includes(dw);
   const pool = isJ ? STORIES.jump : STORIES.swim;
   
@@ -3831,16 +3836,26 @@ function recUnlockStory() {
   const collectedTitles = new Set(G.collected.map(s => s.title));
   const available = pool.filter(s => !collectedTitles.has(s.title));
   
-  let story;
+  const dateHash = dateStr.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
   if (available.length > 0) {
-    // 使用确定性选择
-    const dateHash = recDialogDateStr.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-    story = available[dateHash % available.length];
+    return available[dateHash % available.length];
   } else {
-    // 所有故事都收集过了
-    const dateHash = recDialogDateStr.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-    story = pool[dateHash % pool.length];
+    return pool[dateHash % pool.length];
   }
+}
+
+// 解锁故事（补录）
+function recUnlockStory() {
+  // 检查是否已有系统故事（带 choices 的完整故事）
+  if (recDialogData.story && recDialogData.story.choices && recDialogData.story.choices.length) {
+    // 已经是完整系统故事，直接展示
+    showStoryModal(recDialogData.story);
+    bigConfetti();
+    return;
+  }
+  
+  // 从故事池选择一个系统故事（始终确保有 choices）
+  const story = pickSystemStoryForDate(recDialogDateStr);
   
   recDialogData.story = story;
   if (!recDialogData.gems.includes('story')) {
@@ -3869,10 +3884,14 @@ function recSaveStory() {
     return;
   }
   
-  // 保存到 recDialogData
+  // 保存到 recDialogData，并添加默认 choices 确保交互体验完整
   recDialogData.story = {
     title: title || '今日故事',
-    text: text
+    text: text,
+    choices: [
+      { text: '🌟 这是一个美好的故事', ending: '温暖的结局' },
+      { text: '🚀 期待更精彩的冒险', ending: '冒险继续' }
+    ]
   };
   
   // 如果 gems 中没有 'story'，添加它
@@ -3883,7 +3902,9 @@ function recSaveStory() {
   renderRecGems();
   renderRecStoryBook();
   
-  alert('✅ 故事已保存！');
+  // 保存后直接弹出故事交互弹窗（与当日打卡体验一致）
+  showStoryModal(recDialogData.story);
+  bigConfetti();
 }
 
 // 切换习惯状态
