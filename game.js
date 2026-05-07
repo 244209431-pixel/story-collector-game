@@ -690,6 +690,19 @@ function repairData(){
     if(m.redeemedDate===undefined) m.redeemedDate=null;
   });
   
+  // 【修复】同步 outdoor 任务与习惯完成状态
+  // outdoor 是派生数据，由三个习惯（fast/tidy/polite）全部完成决定
+  if(G.habits && G.tasks){
+    const allHabitsDone = G.habits.fast && G.habits.tidy && G.habits.polite;
+    G.tasks.outdoor = allHabitsDone;
+    // 同步 gems 数组
+    if(allHabitsDone){
+      if(!G.gems.includes('outdoor')) G.gems.push('outdoor');
+    } else {
+      G.gems = G.gems.filter(g => g !== 'outdoor');
+    }
+  }
+  
   // 第二步：重新统计 totalDays（【v8.7】支持故事导演权解锁后重新计算）
   // 如果已经解锁过故事导演权，则只计算解锁那天之后的打卡天数
   // 【v10.0】注意：totalDays 仍用于宝箱导演权周期，但只统计 allDone===true
@@ -3177,12 +3190,14 @@ function toggleHabit(k){
   if(allDone&&!G.ach.goodHabit){
     G.ach.goodHabit=true;
     G.tasks.outdoor=true;
+    if(!G.gems.includes('outdoor')) G.gems.push('outdoor');
     gemAnim('💚');
     renderGems();renderTasks();renderStoryProg();
     setTimeout(()=>showAchModal('🌟 好习惯之星！',{text:'🎉 太棒了！\n\n你今天的行为习惯全部达标！\n\n做事快速不拖拉 ⚡\n按时吃维生素D 🥛\n10点前上床睡觉 🌙\n\n你就是最闪亮的好习惯之星！继续保持哦！✨'}),600);
     renderAch();
   } else if(allDone){
     G.tasks.outdoor=true;
+    if(!G.gems.includes('outdoor')) G.gems.push('outdoor');
     renderGems();renderTasks();renderStoryProg();
   } else {
     G.tasks.outdoor=false;
