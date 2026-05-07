@@ -68,17 +68,17 @@
       <div id="sportCardContainer"></div>
 
       <div class="card">
-        <h3>💎 今日故事宝石</h3>
+        <h3>💎 故事宝石</h3>
         <div class="gems-grid" id="gemsGrid"></div>
       </div>
 
       <div class="card">
-        <h3>📋 每日冒险任务</h3>
+        <h3>📋 冒险任务</h3>
         <div id="tasksList"></div>
       </div>
 
       <div class="card">
-        <h3>📖 今日故事</h3>
+        <h3>📖 故事</h3>
         <div class="story-book">
           <span class="book-icon">📚</span>
           <h4 id="storyTitle">等待宝石解锁...</h4>
@@ -89,7 +89,7 @@
       </div>
 
       <div class="card">
-        <h3>⭐ 今日行为习惯</h3>
+        <h3>⭐ 行为习惯</h3>
         <div id="habitsList"></div>
       </div>
     </div>
@@ -261,8 +261,15 @@
 
   <!-- 补录对话框（重构版 - 与主页面UI一致） -->
   <div class="modal-overlay" id="recoveryDialog" style="display:none">
-    <div class="modal" style="max-width:480px;width:95%">
-      <div class="modal-header">
+    <div class="modal recovery-mode" style="max-width:480px;width:95%">
+      <!-- 补录模式标识横幅（橙色） -->
+      <div class="recovery-banner" id="recoveryBanner">
+        <span class="banner-icon">📝</span>
+        <span class="banner-text" id="recoveryBannerText">补录模式</span>
+        <span class="banner-date" id="recoveryBannerDate"></span>
+      </div>
+      
+      <div class="modal-header recovery-header">
         <h3>📝 补录 <span id="recDialogDate"></span></h3>
         <button class="modal-close" onclick="hideRecoveryDialog()">×</button>
       </div>
@@ -273,21 +280,21 @@
         <!-- 运动类型标题卡片（今日跳绳日/游泳日） -->
         <div id="recSportCardContainer"></div>
         
-        <!-- 今日故事宝石 -->
+        <!-- 故事宝石 -->
         <div class="card" style="margin-bottom:12px">
-          <h4 style="font-size:15px;margin-bottom:8px">💎 今日故事宝石</h4>
+          <h4 style="font-size:15px;margin-bottom:8px">💎 故事宝石</h4>
           <div class="gems-grid" id="recGemsGrid"></div>
         </div>
         
-        <!-- 每日冒险任务 -->
+        <!-- 冒险任务 -->
         <div class="card" style="margin-bottom:12px">
-          <h4 style="font-size:15px;margin-bottom:8px">📋 每日冒险任务</h4>
+          <h4 style="font-size:15px;margin-bottom:8px">📋 冒险任务</h4>
           <div id="recTasksList"></div>
         </div>
         
-        <!-- 今日故事 -->
+        <!-- 故事 -->
         <div class="card" style="margin-bottom:12px">
-          <h4 style="font-size:15px;margin-bottom:8px">📖 今日故事</h4>
+          <h4 style="font-size:15px;margin-bottom:8px">📖 故事</h4>
           <div class="story-book" id="recStoryBook">
             <span class="book-icon" id="recBookIcon">📚</span>
             <h4 id="recStoryTitle">等待宝石解锁...</h4>
@@ -300,14 +307,14 @@
               <div style="font-size:13px;color:var(--t3);margin-bottom:8px">✍️ 或者手动录入故事：</div>
               <input type="text" id="recStoryTitleInput" placeholder="故事标题（可选）" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:8px;box-sizing:border-box">
               <textarea id="recStoryTextInput" placeholder="写下今天的故事..." rows="3" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box;margin-bottom:8px"></textarea>
-              <button class="btn-submit" onclick="recSaveStory()" style="width:100%;padding:10px;border:none;border-radius:8px;background:linear-gradient(135deg,var(--purple),var(--pink));color:white;font-size:14px;font-weight:600;cursor:pointer">✅ 保存故事</button>
+              <button class="btn-submit recovery-btn" id="recBtnSaveStory" onclick="recSaveStory()">✅ 保存故事</button>
             </div>
           </div>
         </div>
         
-        <!-- 今日行为习惯 -->
+        <!-- 行为习惯 -->
         <div class="card" style="margin-bottom:12px">
-          <h4 style="font-size:15px;margin-bottom:8px">⭐ 今日行为习惯</h4>
+          <h4 style="font-size:15px;margin-bottom:8px">⭐ 行为习惯</h4>
           <div id="recHabitsList"></div>
         </div>
         

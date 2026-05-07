@@ -3412,6 +3412,16 @@ function showRecoveryDialog(date) {
   document.getElementById('recDialogDate').textContent = dateStr;
   document.getElementById('recDialogDateStr').textContent = '补录日期：' + recDialogDateStr;
   
+  // 设置横幅日期显示
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const weekday = ['日', '一', '二', '三', '四', '五', '六'][date.getDay()];
+  const bannerDate = `（${month}月${day}日 周${weekday}）`;
+  const bannerText = document.getElementById('recoveryBannerText');
+  const bannerDateEl = document.getElementById('recoveryBannerDate');
+  if (bannerText) bannerText.textContent = '补录模式';
+  if (bannerDateEl) bannerDateEl.textContent = bannerDate;
+  
   // 初始化补录数据（从 G.history 恢复或新建）
   recDialogData = {
     tasks: { sport: false, homework: false, study: false, outdoor: false },
@@ -3847,11 +3857,14 @@ function recRedeemMedal() {
 }
 
 // 隐藏补录对话框
-// 隐藏补录对话框
 function hideRecoveryDialog() {
   document.getElementById('recoveryDialog').style.display = 'none';
   recDialogDateStr = '';
   recDialogData = null;
+  
+  // 清除横幅日期
+  const bannerDateEl = document.getElementById('recoveryBannerDate');
+  if (bannerDateEl) bannerDateEl.textContent = '';
 }
 
 // 确认补录

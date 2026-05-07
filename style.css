@@ -1117,3 +1117,117 @@ body::before{
   border-color: #A855F7 !important;
   transform: translateY(-1px);
 }
+
+/* ============ 【v12.3】补录模式样式 ============ */
+/* 补录对话框遮罩层 - 橙色色调 */
+.recovery-mode-overlay {
+  background: rgba(255, 152, 0, 0.1) !important;
+}
+
+/* 补录对话框容器 */
+.recovery-mode {
+  border: 2px solid var(--orange) !important;
+  box-shadow: 0 8px 32px rgba(255, 152, 0, 0.2) !important;
+}
+
+/* 补录模式横幅（橙色渐变） */
+.recovery-banner {
+  background: linear-gradient(135deg, #ff9800 0%, #ff5722 100%);
+  color: white;
+  padding: 14px 20px;
+  border-radius: 20px 20px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.recovery-banner .banner-icon {
+  font-size: 24px;
+}
+
+.recovery-banner .banner-text {
+  flex: 1;
+}
+
+.recovery-banner .banner-date {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+/* 补录模式对话框头部 */
+.recovery-header {
+  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%) !important;
+  border-bottom: 2px solid var(--orange) !important;
+}
+
+.recovery-header h3 {
+  color: #e65100 !important;
+}
+
+.recovery-header .modal-close {
+  color: #e65100 !important;
+}
+
+/* 补录模式运动卡片（橙色系） */
+.recovery-mode .sport-card.jc {
+  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%) !important;
+  border: 2px solid var(--orange) !important;
+}
+
+.recovery-mode .sport-card.sc {
+  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%) !important;
+  border: 2px solid var(--sky) !important;
+}
+
+/* 补录模式进度条（橙色） */
+.recovery-mode .progress-fill {
+  background: linear-gradient(90deg, var(--orange), var(--amber)) !important;
+}
+
+/* 补录模式宝石网格 */
+.recovery-mode .gem-slot.on {
+  border-color: var(--orange) !important;
+  background: linear-gradient(135deg, #fff3e0, #ffe0b2) !important;
+}
+
+/* 补录模式按钮（橙色系） */
+.recovery-btn {
+  background: linear-gradient(135deg, var(--orange), var(--amber)) !important;
+  color: white !important;
+  border: none !important;
+}
+
+.recovery-btn:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.4) !important;
+}
+
+/* 补录模式确认按钮 */
+.recovery-mode .btn-confirm {
+  background: linear-gradient(135deg, var(--orange), #ff5722) !important;
+}
+
+.recovery-mode .btn-confirm:hover {
+  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.4) !important;
+}
+
+/* 补录模式取消按钮 */
+.recovery-mode .btn-cancel {
+  border-color: var(--orange) !important;
+  color: var(--orange) !important;
+}
+
+/* 补录模式故事书 */
+.recovery-mode .story-book {
+  border: 2px solid var(--orange) !important;
+  background: linear-gradient(135deg, #fff8e1, #ffecb3) !important;
+}
+
+/* 补录模式输入框焦点 */
+.recovery-mode input:focus,
+.recovery-mode textarea:focus {
+  border-color: var(--orange) !important;
+  box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.1) !important;
+}
