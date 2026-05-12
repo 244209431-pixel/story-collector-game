@@ -478,14 +478,14 @@ function save(){
           cur._lastSync = uploadData._lastSync;
           localStorage.setItem(key, JSON.stringify(cur));
         } catch(e){}
-        showSyncToast('✅ 数据已同步到云端', 'success');
+        // 【v11.7】静默同步，不再每次save都弹提示
+        console.log('[save] ✅ 云端同步成功');
       } else {
         console.warn('[save] ⚠️ 云端同步失败，将依赖自动同步');
-        showSyncToast('⚠️ 云端同步失败，稍后自动重试', 'warning');
+        // 只在失败时才提示用户
       }
     }).catch(e => {
       console.error('[save] ❌ 云端同步异常:', e.message);
-      showSyncToast('❌ 云端同步异常: ' + e.message, 'error');
     });
   } else if(!_cloudSaveEnabled) {
     console.log('[save] ⏳ startup 阶段，跳过 cloudSave（等待 cloudLoad 完成后再允许上传）');
@@ -1289,18 +1289,27 @@ async function cloudLoad(){
             }
           }
           
-          // 合并 jumpCount（取最大值，谁跳得多用谁）
-          if(typeof data.jumpCount === 'number' && data.jumpCount > G.jumpCount){
+          // 【v11.7 修复】合并 jumpCount 和 swimDone 时必须检查日期
+          // 只有云端数据也是今天的，才合并当日运动状态
+          // 否则昨天的 jumpCount=1500 会错误地覆盖今天的 jumpCount=0
+          const cloudIsToday = data.date === today;
+          
+          // 合并 jumpCount（取最大值，但只限同一天）
+          if(cloudIsToday && typeof data.jumpCount === 'number' && data.jumpCount > G.jumpCount){
             G.jumpCount = data.jumpCount;
             changed = true;
-            console.log('[cloudLoad] 合并 jumpCount=', G.jumpCount);
+            console.log('[cloudLoad] 合并 jumpCount=', G.jumpCount, '(同日数据)');
+          } else if(!cloudIsToday && typeof data.jumpCount === 'number' && data.jumpCount > 0){
+            console.log('[cloudLoad] 跳过 jumpCount 合并：云端数据日期=', data.date, '≠ 今天=', today);
           }
           
-          // 合并 swimDone（OR 逻辑）
-          if(data.swimDone && !G.swimDone){
+          // 合并 swimDone（OR 逻辑，但只限同一天）
+          if(cloudIsToday && data.swimDone && !G.swimDone){
             G.swimDone = true;
             changed = true;
-            console.log('[cloudLoad] 合并 swimDone=true');
+            console.log('[cloudLoad] 合并 swimDone=true (同日数据)');
+          } else if(!cloudIsToday && data.swimDone){
+            console.log('[cloudLoad] 跳过 swimDone 合并：云端数据日期=', data.date, '≠ 今天=', today);
           }
           
           // 合并 habits（OR 逻辑：一端完成即为完成）
@@ -3447,17 +3456,17 @@ function initGame(){
           const afterWeekly = JSON.stringify(G.weekly);
           const afterHistory = Object.keys(G.history).length;
           initGame();
+          // 【v11.7】静默同步，不再弹提示打扰用户
           if(result){
-            showSyncToast('☁️ 已从其他设备同步新数据', 'success');
+            console.log('[visibilitySync] 已从其他设备同步新数据');
           } else if(beforeWeekly !== afterWeekly || beforeHistory !== afterHistory){
-            showSyncToast('☁️ 数据已更新', 'success');
+            console.log('[visibilitySync] 数据已更新');
           } else {
             console.log('[visibilitySync] 云端无新数据');
           }
           console.log('[visibilitySync] ✅ 同步完成, weekly变化:', beforeWeekly !== afterWeekly, ', history条数:', beforeHistory, '→', afterHistory);
         } catch(e) {
           console.log('[visibilitySync] ⚠️ 同步失败:', e.message);
-          showSyncToast('⚠️ 同步失败: ' + e.message, 'warning');
         }
       }
     });
@@ -3473,8 +3482,9 @@ function initGame(){
       try {
         const result = await cloudLoad();
         initGame();
+        // 【v11.7】静默同步，不再弹提示打扰用户
         if(result || JSON.stringify(G.weekly) !== beforeWeekly){
-          showSyncToast('☁️ 已从其他设备同步新数据', 'success');
+          console.log('[focusSync] 已从其他设备同步新数据');
         }
         console.log('[focusSync] ✅ 云端数据已同步');
       } catch(e) {
