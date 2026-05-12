@@ -1,7 +1,7 @@
 // ==========================================
 // 🎮 故事收集家 - 游戏核心引擎（GitHub Gist 同步版）
-// v12.0 — Bug修复 + 故事扩充 + 勋章系统增强
-// 修复：补录数据完整性、云端同步恢复、变量命名冲突
+// v12.1 — 彻底修复跳绳/游泳状态污染Bug
+// 修复：repairData增加jumpCount一致性校验、cloudLoad tasks合并增加sport验证
 // ==========================================
 
 // ===== 云同步配置（GitHub Gist 方案） =====
@@ -891,6 +891,46 @@ function repairData(){
     G.ach.goodHabit=false;
     console.log('[修复] 好习惯之星成就已重置（当天习惯未全部达标）');
   }
+
+  // 【v12.1 修复】jumpCount/swimDone 与 history 一致性校验
+  // 防止被云端错误合并污染的数据（如：jumpCount=1500 但今天实际没打卡）
+  const todayDs_fix = new Date().toDateString();
+  const dw_fix = new Date().getDay();
+  const isJumpDay_fix = JUMP.includes(dw_fix);
+  const isSwimDay_fix = SWIM.includes(dw_fix);
+  
+  if(G.date === todayDs_fix){
+    const todayHist = G.history ? G.history[todayDs_fix] : null;
+    const histHasSport = todayHist && todayHist.tasks && todayHist.tasks.sport;
+    
+    // 跳绳日：jumpCount >= 1500 但 history 无记录 → 重置
+    if(isJumpDay_fix && G.jumpCount >= 1500 && G.tasks.sport && !histHasSport){
+      console.log('[v12.1修复] jumpCount 异常: jumpCount=', G.jumpCount, 
+        ', tasks.sport=true, 但 history 无记录，重置为0');
+      G.jumpCount = 0;
+      G.tasks.sport = false;
+      if(G.gems) G.gems = G.gems.filter(g => g !== 'sport');
+    }
+    
+    // 游泳日：swimDone=true 但 history 无记录 → 重置
+    if(isSwimDay_fix && G.swimDone && G.tasks.sport && !histHasSport){
+      console.log('[v12.1修复] swimDone 异常: swimDone=true, tasks.sport=true, 但 history 无记录，重置');
+      G.swimDone = false;
+      G.tasks.sport = false;
+      if(G.gems) G.gems = G.gems.filter(g => g !== 'sport');
+    }
+    
+    // 额外保护：即使不是跳绳日/游泳日，tasks.sport=true 但没有对应运动数据也重置
+    if(G.tasks.sport && !histHasSport){
+      const hasJumpData = isJumpDay_fix && G.jumpCount >= 1500;
+      const hasSwimData = isSwimDay_fix && G.swimDone;
+      if(!hasJumpData && !hasSwimData){
+        console.log('[v12.1修复] tasks.sport=true 但无对应运动数据且 history 无记录，重置');
+        G.tasks.sport = false;
+        if(G.gems) G.gems = G.gems.filter(g => g !== 'sport');
+      }
+    }
+  }
   
   // 【v8.7】故事导演权：
   // - dirUnlockedEver 为 true → 徽章永久保留（在 updateStatus 中显示）
@@ -1273,13 +1313,44 @@ async function cloudLoad(){
           const today = new Date().toDateString();
           
           // 合并今日任务（OR 逻辑：一端完成即为完成）
+          // 【v12.1 修复】sport 任务需验证运动数据一致性
           if(data.date === today && G.date === today){
             if(data.tasks && G.tasks){
               let tasksChanged = false;
               Object.keys(G.tasks).forEach(k => {
                 if(data.tasks[k] && !G.tasks[k]){
-                  G.tasks[k] = true;
-                  tasksChanged = true;
+                  // sport 任务特殊处理：不能仅靠 OR 合并
+                  // 必须验证本地有对应的运动完成数据
+                  if(k === 'sport'){
+                    const dw_cl = new Date().getDay();
+                    const isJ_cl = JUMP.includes(dw_cl);
+                    const isS_cl = SWIM.includes(dw_cl);
+                    if((isJ_cl && G.jumpCount >= 1500) || (isS_cl && G.swimDone)){
+                      G.tasks[k] = true;
+                      tasksChanged = true;
+                      console.log('[cloudLoad] sport 任务 OR 合并：本地运动数据验证通过');
+                    } else {
+                      // 本地运动数据不支持，同时从云端同步运动数据
+                      if(isJ_cl && typeof data.jumpCount === 'number' && data.jumpCount >= 1500){
+                        G.jumpCount = data.jumpCount;
+                        G.tasks[k] = true;
+                        tasksChanged = true;
+                        console.log('[cloudLoad] sport 任务 OR 合并：采用云端 jumpCount=', data.jumpCount);
+                      } else if(isS_cl && data.swimDone){
+                        G.swimDone = true;
+                        G.tasks[k] = true;
+                        tasksChanged = true;
+                        console.log('[cloudLoad] sport 任务 OR 合并：采用云端 swimDone');
+                      } else {
+                        console.log('[cloudLoad] 跳过 tasks.sport OR 合并：运动数据不一致（jumpCount=', 
+                          G.jumpCount, ', swimDone=', G.swimDone, 
+                          ', cloud.jumpCount=', data.jumpCount, ', cloud.swimDone=', data.swimDone, '）');
+                      }
+                    }
+                  } else {
+                    G.tasks[k] = true;
+                    tasksChanged = true;
+                  }
                 }
               });
               if(tasksChanged){
