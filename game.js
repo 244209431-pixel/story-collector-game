@@ -1,7 +1,8 @@
 // ==========================================
 // 🎮 故事收集家 - 游戏核心引擎（GitHub Gist 同步版）
-// v12.1 — 彻底修复跳绳/游泳状态污染Bug
-// 修复：repairData增加jumpCount一致性校验、cloudLoad tasks合并增加sport验证
+// v12.2 — 根治运动状态污染Bug（_sportCompletedToday 源数据标志位方案）
+// 核心修复：增加 _sportCompletedToday 标志位，只有用户主动操作才能标记运动完成
+// 修复链：repairData/cloudLoad/独立合并 全面拦截未经用户操作的污染数据
 // ==========================================
 
 // ===== 云同步配置（GitHub Gist 方案） =====
@@ -403,6 +404,10 @@ function makeDefaultState(){
     weeklyFullDays:0,    // 派生数据：本周全部完成（allDone）的天数（0-7），用于宝箱进度
     // 【v11.0 新增】
     spinHistory:[],      // 源数据：惊喜转盘抽奖记录 [{ triggerMedalIndex, result, date, used }]
+    // 【v12.2 新增】源数据：用户今日是否通过主动操作完成了运动
+    // 只有 addJump(达到1500)/completeJump()/completeSwim() 才会设为 true
+    // 跨天时重置为 false。用于区分"用户真实操作"和"数据污染"
+    _sportCompletedToday: false,
   };
 }
 
@@ -460,7 +465,7 @@ function save(){
     } catch(e) {}
     return 0;
   })();
-  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:existingLastSync, _version:'v11.6'};
+  const data={...G, _user:currentUser, _avatar:selectedAvatar, _lastSync:existingLastSync, _version:'v12.2'};
   localStorage.setItem(key,JSON.stringify(data));
   console.log('[save] 已保存, history keys=',Object.keys(G.history).length,', weekly keys=',Object.keys(G.weekly).length, ', _cloudSaveEnabled=', _cloudSaveEnabled);
   
@@ -532,6 +537,8 @@ function load(){
       if(Array.isArray(d.medals)) G.medals=[...d.medals];
       // 【v11.0】加载转盘记录
       if(Array.isArray(d.spinHistory)) G.spinHistory=[...d.spinHistory];
+      // 【v12.2】加载运动完成标志位
+      if(typeof d._sportCompletedToday==='boolean') G._sportCompletedToday=d._sportCompletedToday;
       
       console.log('[load] 原始数据加载完成, date=',G.date);
       console.log('[load] history keys=',Object.keys(G.history));
@@ -658,6 +665,8 @@ function handleDayChange(prevDate, today){
   G.gems=[];
   G.date=today;
   G.ach.goodHabit=false;
+  // 【v12.2】跨天时重置运动完成标志位
+  G._sportCompletedToday=false;
   
   console.log('[跨天] 完成，今日数据已重置');
 }
@@ -892,40 +901,37 @@ function repairData(){
     console.log('[修复] 好习惯之星成就已重置（当天习惯未全部达标）');
   }
 
-  // 【v12.1 修复】jumpCount/swimDone 与 history 一致性校验
-  // 防止被云端错误合并污染的数据（如：jumpCount=1500 但今天实际没打卡）
+  // 【v12.2 修复】运动状态污染拦截（替代 v12.1 的 history 判断）
+  // 核心逻辑：如果 tasks.sport=true 但 _sportCompletedToday=false，说明不是用户主动操作，强制重置
   const todayDs_fix = new Date().toDateString();
   const dw_fix = new Date().getDay();
   const isJumpDay_fix = JUMP.includes(dw_fix);
   const isSwimDay_fix = SWIM.includes(dw_fix);
   
   if(G.date === todayDs_fix){
-    const todayHist = G.history ? G.history[todayDs_fix] : null;
-    const histHasSport = todayHist && todayHist.tasks && todayHist.tasks.sport;
-    
-    // 跳绳日：jumpCount >= 1500 但 history 无记录 → 重置
-    if(isJumpDay_fix && G.jumpCount >= 1500 && G.tasks.sport && !histHasSport){
-      console.log('[v12.1修复] jumpCount 异常: jumpCount=', G.jumpCount, 
-        ', tasks.sport=true, 但 history 无记录，重置为0');
+    // 跳绳日：jumpCount >= 1500 但用户未主动完成 → 数据被污染，强制重置
+    if(isJumpDay_fix && G.jumpCount >= 1500 && G.tasks.sport && !G._sportCompletedToday){
+      console.log('[v12.2修复] jumpCount 污染拦截: jumpCount=', G.jumpCount, 
+        ', tasks.sport=true, 但 _sportCompletedToday=false，强制重置');
       G.jumpCount = 0;
       G.tasks.sport = false;
       if(G.gems) G.gems = G.gems.filter(g => g !== 'sport');
     }
     
-    // 游泳日：swimDone=true 但 history 无记录 → 重置
-    if(isSwimDay_fix && G.swimDone && G.tasks.sport && !histHasSport){
-      console.log('[v12.1修复] swimDone 异常: swimDone=true, tasks.sport=true, 但 history 无记录，重置');
+    // 游泳日：swimDone=true 但用户未主动完成 → 数据被污染，强制重置
+    if(isSwimDay_fix && G.swimDone && G.tasks.sport && !G._sportCompletedToday){
+      console.log('[v12.2修复] swimDone 污染拦截: swimDone=true, tasks.sport=true, 但 _sportCompletedToday=false，强制重置');
       G.swimDone = false;
       G.tasks.sport = false;
       if(G.gems) G.gems = G.gems.filter(g => g !== 'sport');
     }
     
-    // 额外保护：即使不是跳绳日/游泳日，tasks.sport=true 但没有对应运动数据也重置
-    if(G.tasks.sport && !histHasSport){
+    // 额外保护：tasks.sport=true 但用户未主动完成且无对应运动数据 → 强制重置
+    if(G.tasks.sport && !G._sportCompletedToday){
       const hasJumpData = isJumpDay_fix && G.jumpCount >= 1500;
       const hasSwimData = isSwimDay_fix && G.swimDone;
       if(!hasJumpData && !hasSwimData){
-        console.log('[v12.1修复] tasks.sport=true 但无对应运动数据且 history 无记录，重置');
+        console.log('[v12.2修复] tasks.sport=true 但 _sportCompletedToday=false 且无运动数据，强制重置');
         G.tasks.sport = false;
         if(G.gems) G.gems = G.gems.filter(g => g !== 'sport');
       }
@@ -1322,30 +1328,40 @@ async function cloudLoad(){
                   // sport 任务特殊处理：不能仅靠 OR 合并
                   // 必须验证本地有对应的运动完成数据
                   if(k === 'sport'){
+                    // 【v12.2 修复】sport 合并必须检查 _sportCompletedToday 源数据标志位
+                    // 只有本地或云端明确标记了用户主动完成，才允许合并
                     const dw_cl = new Date().getDay();
                     const isJ_cl = JUMP.includes(dw_cl);
                     const isS_cl = SWIM.includes(dw_cl);
-                    if((isJ_cl && G.jumpCount >= 1500) || (isS_cl && G.swimDone)){
+                    
+                    // 本地已有用户主动完成的运动数据
+                    if(G._sportCompletedToday && ((isJ_cl && G.jumpCount >= 1500) || (isS_cl && G.swimDone))){
                       G.tasks[k] = true;
                       tasksChanged = true;
-                      console.log('[cloudLoad] sport 任务 OR 合并：本地运动数据验证通过');
-                    } else {
-                      // 本地运动数据不支持，同时从云端同步运动数据
+                      console.log('[cloudLoad] sport 任务 OR 合并：本地 _sportCompletedToday=true 验证通过');
+                    } 
+                    // 云端明确标记了用户主动完成
+                    else if(data._sportCompletedToday === true){
                       if(isJ_cl && typeof data.jumpCount === 'number' && data.jumpCount >= 1500){
                         G.jumpCount = data.jumpCount;
                         G.tasks[k] = true;
+                        G._sportCompletedToday = true;
                         tasksChanged = true;
-                        console.log('[cloudLoad] sport 任务 OR 合并：采用云端 jumpCount=', data.jumpCount);
+                        console.log('[cloudLoad] sport 任务 OR 合并：云端 _sportCompletedToday=true, jumpCount=', data.jumpCount);
                       } else if(isS_cl && data.swimDone){
                         G.swimDone = true;
                         G.tasks[k] = true;
+                        G._sportCompletedToday = true;
                         tasksChanged = true;
-                        console.log('[cloudLoad] sport 任务 OR 合并：采用云端 swimDone');
+                        console.log('[cloudLoad] sport 任务 OR 合并：云端 _sportCompletedToday=true, swimDone');
                       } else {
-                        console.log('[cloudLoad] 跳过 tasks.sport OR 合并：运动数据不一致（jumpCount=', 
-                          G.jumpCount, ', swimDone=', G.swimDone, 
-                          ', cloud.jumpCount=', data.jumpCount, ', cloud.swimDone=', data.swimDone, '）');
+                        console.log('[cloudLoad] 跳过 tasks.sport OR 合并：云端 _sportCompletedToday=true 但运动类型不匹配');
                       }
+                    } else {
+                      console.log('[cloudLoad] 拒绝 tasks.sport OR 合并：_sportCompletedToday 均为 false（本地=', 
+                        G._sportCompletedToday, ', 云端=', data._sportCompletedToday,
+                        ', jumpCount=', G.jumpCount, '/', data.jumpCount, 
+                        ', swimDone=', G.swimDone, '/', data.swimDone, '）');
                     }
                   } else {
                     G.tasks[k] = true;
@@ -1365,20 +1381,30 @@ async function cloudLoad(){
           // 否则昨天的 jumpCount=1500 会错误地覆盖今天的 jumpCount=0
           const cloudIsToday = data.date === today;
           
-          // 合并 jumpCount（取最大值，但只限同一天）
+          // 【v12.2 修复】合并 jumpCount（必须 _sportCompletedToday=true 才允许）
           if(cloudIsToday && typeof data.jumpCount === 'number' && data.jumpCount > G.jumpCount){
-            G.jumpCount = data.jumpCount;
-            changed = true;
-            console.log('[cloudLoad] 合并 jumpCount=', G.jumpCount, '(同日数据)');
+            if(data._sportCompletedToday === true){
+              G.jumpCount = data.jumpCount;
+              G._sportCompletedToday = true;
+              changed = true;
+              console.log('[cloudLoad] 合并 jumpCount=', G.jumpCount, '(云端 _sportCompletedToday=true)');
+            } else {
+              console.log('[cloudLoad] 拒绝 jumpCount 合并：云端 _sportCompletedToday=false, jumpCount=', data.jumpCount);
+            }
           } else if(!cloudIsToday && typeof data.jumpCount === 'number' && data.jumpCount > 0){
             console.log('[cloudLoad] 跳过 jumpCount 合并：云端数据日期=', data.date, '≠ 今天=', today);
           }
           
-          // 合并 swimDone（OR 逻辑，但只限同一天）
+          // 【v12.2 修复】合并 swimDone（必须 _sportCompletedToday=true 才允许）
           if(cloudIsToday && data.swimDone && !G.swimDone){
-            G.swimDone = true;
-            changed = true;
-            console.log('[cloudLoad] 合并 swimDone=true (同日数据)');
+            if(data._sportCompletedToday === true){
+              G.swimDone = true;
+              G._sportCompletedToday = true;
+              changed = true;
+              console.log('[cloudLoad] 合并 swimDone=true (云端 _sportCompletedToday=true)');
+            } else {
+              console.log('[cloudLoad] 拒绝 swimDone 合并：云端 _sportCompletedToday=false');
+            }
           } else if(!cloudIsToday && data.swimDone){
             console.log('[cloudLoad] 跳过 swimDone 合并：云端数据日期=', data.date, '≠ 今天=', today);
           }
@@ -2594,12 +2620,12 @@ function renderStoryProg(){
 function addJump(n){
   if(G.tasks.sport)return;
   G.jumpCount=Math.max(0,G.jumpCount+n);
-  if(G.jumpCount>=1500){G.jumpCount=1500;G.tasks.sport=true;G.consJump++;gemAnim('🧡');checkJumpHero()}
+  if(G.jumpCount>=1500){G.jumpCount=1500;G.tasks.sport=true;G._sportCompletedToday=true;G.consJump++;gemAnim('🧡');checkJumpHero()}
   renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();save();
 }
-function completeJump(){G.jumpCount=1500;G.tasks.sport=true;G.consJump++;gemAnim('🧡');renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();checkJumpHero();save()}
+function completeJump(){G.jumpCount=1500;G.tasks.sport=true;G._sportCompletedToday=true;G.consJump++;gemAnim('🧡');renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();checkJumpHero();save()}
 function completeSwim(){
-  if(G.swimDone)return;G.swimDone=true;G.tasks.sport=true;G.weekSwim++;
+  if(G.swimDone)return;G.swimDone=true;G.tasks.sport=true;G._sportCompletedToday=true;G.weekSwim++;
   gemAnim('💙');renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();checkWaterSpirit();save();
 }
 function toggleTask(k){
