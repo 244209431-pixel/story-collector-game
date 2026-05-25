@@ -739,6 +739,25 @@ function repairData(){
     }
   }
   
+  // 【v12.5 修复】清理 gems 中无效的残留数据
+  // 之前版本 bug 可能导致 task 已取消但 gems 数组里还残留旧值
+  ['homework','study'].forEach(k=>{
+    if(!G.tasks[k] && G.gems.includes(k)){
+      G.gems=G.gems.filter(g=>g!==k);
+      console.log('[修复] 清理无效 gem:',k,'(task=',G.tasks[k],')');
+    }
+  });
+  // sport：只有 jumpCount 达标或 swimDone 才应有 gem
+  if(!G.tasks.sport && G.gems.includes('sport')){
+    G.gems=G.gems.filter(g=>g!=='sport');
+    console.log('[修复] 清理无效 gem: sport (jumpCount=',G.jumpCount,', swimDone=',G.swimDone,')');
+  }
+  // story：只有领取了故事才应有 gem
+  if((!G.story||!G.story.title) && G.gems.includes('story')){
+    G.gems=G.gems.filter(g=>g!=='story');
+    console.log('[修复] 清理无效 gem: story');
+  }
+  
   // 第二步：重新统计 totalDays（【v8.7】支持故事导演权解锁后重新计算）
   // 如果已经解锁过故事导演权，则只计算解锁那天之后的打卡天数
   // 【v10.0】注意：totalDays 仍用于宝箱导演权周期，但只统计 allDone===true
