@@ -1,9 +1,10 @@
 // ==========================================
 // 🎮 故事收集家 - 游戏核心引擎（GitHub Gist 同步版）
-// v12.2 — 根治运动状态污染Bug（_sportCompletedToday 源数据标志位方案）
-// 核心修复：增加 _sportCompletedToday 标志位，只有用户主动操作才能标记运动完成
-// 修复链：repairData/cloudLoad/独立合并 全面拦截未经用户操作的污染数据
+// v12.3 — 修复：habits预勾选/故事重复解锁/跳绳目标2000+可取消
 // ==========================================
+
+// ===== 常量 =====
+const JUMP_TARGET = 2000;
 
 // ===== 云同步配置（GitHub Gist 方案） =====
 let currentUser=null;
@@ -858,7 +859,7 @@ function repairData(){
       realWeekSwim++;
     }
   }
-  if(G.tasks.sport && JUMP.includes(todayDow) && G.jumpCount>=1500){
+  if(G.tasks.sport && JUMP.includes(todayDow) && G.jumpCount>=JUMP_TARGET){
     if(!todayHistRec || todayHistRec.sportType!=='jump' || todayHistRec.jumpCount<1000){
       realWeekJump++;
     }
@@ -909,8 +910,8 @@ function repairData(){
   const isSwimDay_fix = SWIM.includes(dw_fix);
   
   if(G.date === todayDs_fix){
-    // 跳绳日：jumpCount >= 1500 但用户未主动完成 → 数据被污染，强制重置
-    if(isJumpDay_fix && G.jumpCount >= 1500 && G.tasks.sport && !G._sportCompletedToday){
+    // 跳绳日：jumpCount >= JUMP_TARGET 但用户未主动完成 → 数据被污染，强制重置
+    if(isJumpDay_fix && G.jumpCount >= JUMP_TARGET && G.tasks.sport && !G._sportCompletedToday){
       console.log('[v12.2修复] jumpCount 污染拦截: jumpCount=', G.jumpCount, 
         ', tasks.sport=true, 但 _sportCompletedToday=false，强制重置');
       G.jumpCount = 0;
@@ -928,7 +929,7 @@ function repairData(){
     
     // 额外保护：tasks.sport=true 但用户未主动完成且无对应运动数据 → 强制重置
     if(G.tasks.sport && !G._sportCompletedToday){
-      const hasJumpData = isJumpDay_fix && G.jumpCount >= 1500;
+      const hasJumpData = isJumpDay_fix && G.jumpCount >= JUMP_TARGET;
       const hasSwimData = isSwimDay_fix && G.swimDone;
       if(!hasJumpData && !hasSwimData){
         console.log('[v12.2修复] tasks.sport=true 但 _sportCompletedToday=false 且无运动数据，强制重置');
@@ -1335,14 +1336,14 @@ async function cloudLoad(){
                     const isS_cl = SWIM.includes(dw_cl);
                     
                     // 本地已有用户主动完成的运动数据
-                    if(G._sportCompletedToday && ((isJ_cl && G.jumpCount >= 1500) || (isS_cl && G.swimDone))){
+                    if(G._sportCompletedToday && ((isJ_cl && G.jumpCount >= JUMP_TARGET) || (isS_cl && G.swimDone))){
                       G.tasks[k] = true;
                       tasksChanged = true;
                       console.log('[cloudLoad] sport 任务 OR 合并：本地 _sportCompletedToday=true 验证通过');
                     } 
                     // 云端明确标记了用户主动完成
                     else if(data._sportCompletedToday === true){
-                      if(isJ_cl && typeof data.jumpCount === 'number' && data.jumpCount >= 1500){
+                      if(isJ_cl && typeof data.jumpCount === 'number' && data.jumpCount >= JUMP_TARGET){
                         G.jumpCount = data.jumpCount;
                         G.tasks[k] = true;
                         G._sportCompletedToday = true;
@@ -1410,7 +1411,8 @@ async function cloudLoad(){
           }
           
           // 合并 habits（OR 逻辑：一端完成即为完成）
-          if(data.habits && G.habits){
+          // 【Bug 1 修复】只合并今天的 habits，避免跨天污染（昨天已勾选的 habit 不应影响今天）
+          if(data.date === today && data.habits && G.habits){
             Object.keys(G.habits).forEach(k => {
               if(data.habits[k] && !G.habits[k]){
                 G.habits[k] = true;
@@ -2255,7 +2257,7 @@ function showHistoryDetail(dateStr){
   
   let tasksHtml='';
   const taskLabels=[
-    {k:'sport',e:isJ?'🏃‍♀️':'🏊‍♀️',t:isJ?`跳绳 ${hist.jumpCount}/${hist.jumpCount>=1000&&hist.jumpCount<=1000?1000:1500}`:(hist.swimDone?'游泳课 ✅':'游泳课 ❌')},
+    {k:'sport',e:isJ?'🏃‍♀️':'🏊‍♀️',t:isJ?`跳绳 ${hist.jumpCount}/${JUMP_TARGET}`:(hist.swimDone?'游泳课 ✅':'游泳课 ❌')},
     {k:'homework',e:'📝',t:'完成学校作业'},
     {k:'study',e:'📖',t:'新概念学习'},
     {k:'outdoor',e:'⭐',t:'行为习惯达标'}
@@ -2312,7 +2314,7 @@ function showHistoryDetail(dateStr){
       <div class="sport-icon">${isJ?'🏃‍♀️':'🏊‍♀️'}</div>
       <div class="sport-info">
         <h3>${dateLabel}${isJ?'跳绳日 🎯':'游泳日 🌊'}</h3>
-        <p>${isJ?'目标：跳满 1500 个':'完成游泳课'}</p>
+        <p>${isJ?'目标：跳满 '+JUMP_TARGET+' 个':'完成游泳课'}</p>
       </div>
       <div style="margin-left:auto;font-size:28px">${hist.tasks.sport?'✅':'⏳'}</div>
     </div>
@@ -2403,7 +2405,7 @@ function backfillDate(dateStr){
     </div>
     ${isJ?`<div style="margin-left:32px;margin-bottom:8px">
       <label style="font-size:12px;color:var(--t3)">跳绳个数：</label>
-      <input type="number" id="bf_jumpCount" value="1500" min="0" max="10000" style="width:80px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);font-size:13px"/>
+      <input type="number" id="bf_jumpCount" value="${JUMP_TARGET}" min="0" max="10000" style="width:80px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);font-size:13px"/>
     </div>`:''}
     <div class="backfill-item" onclick="toggleBackfill(this,'homework')">
       <span class="bf-cb" id="bf_homework">⬜</span>
@@ -2466,7 +2468,7 @@ function submitBackfill(dateStr){
   const dw=d.getDay();
   const isJ=JUMP.includes(dw);
   const jumpInput=document.getElementById('bf_jumpCount');
-  const jumpCount=isJ?(jumpInput?parseInt(jumpInput.value)||0:1500):0;
+  const jumpCount=isJ?(jumpInput?parseInt(jumpInput.value)||0:JUMP_TARGET):0;
   
   const tasks={
     sport:_bfState.sport,
@@ -2530,21 +2532,21 @@ function renderSport(){
   const dw=new Date().getDay(),isJ=JUMP.includes(dw),isS=SWIM.includes(dw);
   let h='';
   if(isJ){
-    const pct=Math.min(100,(G.jumpCount/1500)*100),done=G.jumpCount>=1500;
+    const pct=Math.min(100,(G.jumpCount/JUMP_TARGET)*100),done=G.jumpCount>=JUMP_TARGET;
     h=`<div class="sport-card jc">
       <div class="sport-head"><div class="sport-icon">🏃‍♀️</div>
-        <div class="sport-info"><h3>今日跳绳日 🎯</h3><p>目标：跳满 1500 个</p></div></div>
+        <div class="sport-info"><h3>今日跳绳日 🎯</h3><p>目标：跳满 ${JUMP_TARGET} 个</p></div></div>
       <div class="progress-bg"><div class="progress-fill" style="width:${pct}%"></div></div>
-      <div class="progress-txt"><span>已跳 ${G.jumpCount} 个</span><span>${done?'✅ 已完成！':'还差 '+(1500-G.jumpCount)+' 个'}</span></div>
-      ${!done?`<div class="jump-counter">
+      <div class="progress-txt"><span>已跳 ${G.jumpCount} 个</span><span>${done?'✅ 已完成！':'还差 '+(JUMP_TARGET-G.jumpCount)+' 个'}</span></div>
+      ${!G.tasks.sport?`<div class="jump-counter">
         <button class="cnt-btn mi" onclick="addJump(-50)">-50</button>
         <input type="number" id="jumpIn" value="100" min="1" max="500"/>
         <button class="cnt-btn pl" onclick="addJump(+parseInt(document.getElementById('jumpIn').value)||100)">+加</button>
       </div>
       <div class="sport-actions">
         <button class="btn btn-j" onclick="addJump(100)">➕ 跳100个</button>
-        <button class="btn btn-ok" onclick="completeJump()">✅ 完成</button>
-      </div>`:`<div class="sport-actions"><button class="btn btn-done">🎉 跳绳已完成！太棒了！</button></div>`}
+        <button class="btn btn-ok" onclick="toggleJump()">✅ 完成</button>
+      </div>`:`<div class="sport-actions"><button class="btn btn-toggle" onclick="toggleJump()">↩️ 取消完成</button></div>`}
     </div>`;
   }else if(isS){
     h=`<div class="sport-card sc">
@@ -2553,8 +2555,8 @@ function renderSport(){
       <div class="progress-bg"><div class="progress-fill" style="width:${G.swimDone?100:0}%"></div></div>
       <div class="progress-txt"><span>${G.swimDone?'游泳课已完成':'等待完成'}</span><span>本周 ${G.weekSwim}/2 次</span></div>
       <div class="sport-actions">
-        ${!G.swimDone?`<button class="btn btn-s" onclick="completeSwim()">🏊 完成游泳课打卡</button>`
-        :`<button class="btn btn-done">🎉 游泳课已完成！</button>`}
+        ${!G.tasks.sport?`<button class="btn btn-s" onclick="toggleSwim()">🏊 完成游泳课打卡</button>`
+        :`<button class="btn btn-toggle" onclick="toggleSwim()">↩️ 取消完成</button>`}
       </div></div>`;
   }
   c.innerHTML=h;
@@ -2580,7 +2582,7 @@ function renderTasks(){
   const l=document.getElementById('tasksList');
   const dw=new Date().getDay(),isJ=JUMP.includes(dw);
   const tasks=[
-    {k:'sport',e:isJ?'🏃‍♀️':'🏊‍♀️',t:isJ?`跳绳 ${G.jumpCount}/1500`:'完成游泳课',d:isJ?'今天是跳绳日！加油！':'今天是游泳日！加油！',g:isJ?'🧡':'💙'},
+    {k:'sport',e:isJ?'🏃‍♀️':'🏊‍♀️',t:isJ?`跳绳 ${G.jumpCount}/${JUMP_TARGET}`:'完成游泳课',d:isJ?'今天是跳绳日！加油！':'今天是游泳日！加油！',g:isJ?'🧡':'💙'},
     {k:'homework',e:'📝',t:'认真高效完成学校作业',d:'专注写作业，不拖拉不磨蹭',g:'💜'},
     {k:'study',e:'📖',t:'认真学习英语',d:'专注高效，认真完成学习任务',g:'💛'},
     {k:'outdoor',e:'⭐',t:'今日行为习惯达标',d:'做事快速、吃维生素D、早睡',g:'💚'}
@@ -2620,14 +2622,41 @@ function renderStoryProg(){
 function addJump(n){
   if(G.tasks.sport)return;
   G.jumpCount=Math.max(0,G.jumpCount+n);
-  if(G.jumpCount>=1500){G.jumpCount=1500;G.tasks.sport=true;G._sportCompletedToday=true;G.consJump++;gemAnim('🧡');checkJumpHero()}
+  if(G.jumpCount>=JUMP_TARGET){G.jumpCount=JUMP_TARGET;G.tasks.sport=true;G._sportCompletedToday=true;G.consJump++;gemAnim('🧡');checkJumpHero()}
   renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();save();
 }
-function completeJump(){G.jumpCount=1500;G.tasks.sport=true;G._sportCompletedToday=true;G.consJump++;gemAnim('🧡');renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();checkJumpHero();save()}
-function completeSwim(){
-  if(G.swimDone)return;G.swimDone=true;G.tasks.sport=true;G._sportCompletedToday=true;G.weekSwim++;
-  gemAnim('💙');renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();checkWaterSpirit();save();
+// 切换跳绳完成状态（完成 ↔ 取消）
+function toggleJump(){
+  if(G.tasks.sport){
+    // 取消完成
+    G.tasks.sport=false;G._sportCompletedToday=false;
+    G.consJump=Math.max(0,G.consJump-1);
+    G.gems=G.gems.filter(g=>g!=='sport');
+  }else{
+    // 标记完成
+    if(G.jumpCount>=JUMP_TARGET){
+      G.jumpCount=JUMP_TARGET;
+      G.tasks.sport=true;G._sportCompletedToday=true;G.consJump++;gemAnim('🧡');checkJumpHero();
+    }else{alert(`还需要跳 ${JUMP_TARGET-G.jumpCount} 个！`);return;}
+  }
+  renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();save();
 }
+// 切换游泳完成状态（完成 ↔ 取消）
+function toggleSwim(){
+  if(G.tasks.sport){
+    // 取消完成
+    G.tasks.sport=false;G._sportCompletedToday=false;G.swimDone=false;
+    G.weekSwim=Math.max(0,G.weekSwim-1);
+    G.gems=G.gems.filter(g=>g!=='sport');
+  }else{
+    // 标记完成（直接标记，游泳课无需额外条件）
+    G.swimDone=true;
+    G.tasks.sport=true;G._sportCompletedToday=true;G.weekSwim++;gemAnim('💙');checkWaterSpirit();
+  }
+  renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();save();
+}
+// 保留旧函数名兼容（如有地方直接调用 completeSwim）
+function completeSwim(){ toggleSwim(); }
 function toggleTask(k){
   if(k==='outdoor')return;
   G.tasks[k]=!G.tasks[k];
@@ -2697,14 +2726,14 @@ function launchFirework(x,y){
 }
 
 // ===== 故事解锁 =====
-// 检查今天是否已解锁过故事
+// 检查今天是否已解锁过故事（使用 toLocaleDateString 与 unlockStory 保存格式一致）
 function hasTodayStory(){
-  const todayStr=new Date().toDateString();
+  const todayStr=new Date().toLocaleDateString('zh-CN');
   return G.collected.some(s=>s.date===todayStr);
 }
 // 获取今天已解锁的故事
 function getTodayStory(){
-  const todayStr=new Date().toDateString();
+  const todayStr=new Date().toLocaleDateString('zh-CN');
   return G.collected.find(s=>s.date===todayStr);
 }
 function unlockStory(){
@@ -3800,7 +3829,7 @@ function renderRecSportCard() {
         <div class="sport-icon">🏃‍♀️</div>
         <div class="sport-info">
           <h3>${dateLabel} 跳绳日 🎯</h3>
-          <p>目标：跳满 1500 个</p>
+          <p>目标：跳满 ${JUMP_TARGET} 个</p>
         </div>
         <div style="margin-left:auto;font-size:28px">${sportDone ? '✅' : '⏳'}</div>
       </div>
@@ -3842,7 +3871,7 @@ function renderRecTasks() {
   const dw = new Date(recDialogDateStr).getDay();
   const isJ = JUMP.includes(dw);
   const tasks = [
-    { k: 'sport', e: isJ ? '🏃‍♀️' : '🏊‍♀️', t: isJ ? `跳绳 ${G.jumpCount}/1500` : '完成游泳课', d: isJ ? '这是跳绳日！加油！' : '这是游泳日！加油！', g: isJ ? '🧡' : '💙' },
+    { k: 'sport', e: isJ ? '🏃‍♀️' : '🏊‍♀️', t: isJ ? `跳绳 ${G.jumpCount}/${JUMP_TARGET}` : '完成游泳课', d: isJ ? '这是跳绳日！加油！' : '这是游泳日！加油！', g: isJ ? '🧡' : '💙' },
     { k: 'homework', e: '📝', t: '认真高效完成学校作业', d: '专注写作业，不拖拉不磨蹭', g: '💜' },
     { k: 'study', e: '📖', t: '认真学习英语', d: '专注高效，认真完成学习任务', g: '💛' },
     { k: 'outdoor', e: '⭐', t: '今日行为习惯达标', d: '做事快速、吃维生素D、早睡', g: '💚' }
@@ -4233,7 +4262,7 @@ async function confirmRecovery() {
     done: allDone,  // 兼容旧版检测逻辑
     story: recDialogData.story || null,  // 保存故事（包括手动录入的）
     sportType: isJ ? 'jump' : 'swim',
-    jumpCount: isJ ? (G.jumpCount || 1500) : 0,
+    jumpCount: isJ ? (G.jumpCount || JUMP_TARGET) : 0,
     swimDone: !isJ ? recDialogData.tasks.sport : false,
     date: recDialogDateStr
   };
