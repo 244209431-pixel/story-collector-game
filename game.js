@@ -1221,20 +1221,23 @@ async function cloudLoad(){
         const cloudIsNewer = cloudLastSync > localLastSync;
         
         // 【Bug5修复】当本地数据为空/初始状态时，执行完整恢复；否则智能合并
-        // 判断本地是否为"空数据"：history为空且date为null或今天（即从未使用过）
-        const localIsEmpty = (!G.history || Object.keys(G.history).length === 0) && (!G.date || G.date === new Date().toDateString());
+        // 判断本地是否为"空数据"：localStorage 中没有原始数据（即从未使用过）
+        // 【v12.4 修复】不能用 G.history 是否为空判断，因为用户取消 habits 后 save() 的 hasAnyData=false 不会写入 history
+        const localIsEmpty = !localRaw || localRaw === '{}';
         // cloudHasData 已在上方声明（line 1112），此处直接复用
         
         if(localIsEmpty && cloudHasData){
           console.log('[cloudLoad] 本地数据为空但云端有数据，执行完整恢复（从云端恢复所有数据）...');
           
           // 完整恢复所有字段（以云端为准）
+          const todayDs = new Date().toDateString();
           if(data.date) G.date = data.date;
           if(typeof data.jumpCount === 'number') G.jumpCount = data.jumpCount;
           if(typeof data.swimDone === 'boolean') G.swimDone = data.swimDone;
-          if(data.tasks && typeof data.tasks === 'object') G.tasks = {...G.tasks, ...data.tasks};
-          if(data.habits && typeof data.habits === 'object') G.habits = {...G.habits, ...data.habits};
-          if(Array.isArray(data.gems)) G.gems = [...data.gems];
+          // 【v12.4 修复】合并今日数据时必须检查日期，避免跨天污染
+          if(data.date === todayDs && data.tasks && typeof data.tasks === 'object') G.tasks = {...G.tasks, ...data.tasks};
+          if(data.date === todayDs && data.habits && typeof data.habits === 'object') G.habits = {...G.habits, ...data.habits};
+          if(data.date === todayDs && Array.isArray(data.gems)) G.gems = [...data.gems];
           if(typeof data.streak === 'number') G.streak = data.streak;
           if(data.weekly && typeof data.weekly === 'object') G.weekly = {...data.weekly};
           if(Array.isArray(data.collected)) G.collected = [...data.collected];
