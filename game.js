@@ -211,7 +211,12 @@ function getGistId(user) {
 }
 
 const W=['日','一','二','三','四','五','六'];
-const JUMP=[1,2,4,6,0], SWIM=[3,5];
+// 运动日配置（2026-06-15 起周四↔周五互换）
+const SPORT_SWITCH = new Date('2026-06-15T00:00:00+08:00');
+const JUMP_OLD=[1,2,4,6,0], SWIM_OLD=[3,5];
+const JUMP_NEW=[1,2,5,6,0], SWIM_NEW=[3,4];
+function jumpDays(d){ return (d||new Date()) >= SPORT_SWITCH ? JUMP_NEW : JUMP_OLD; }
+function swimDays(d){ return (d||new Date()) >= SPORT_SWITCH ? SWIM_NEW : SWIM_OLD; }
 
 // 【v8.4】周一起始：将 JS 的 getDay()（0=日）转换为周一起始的偏移（0=一,1=二...6=日）
 function mondayDow(d){ const dow=(typeof d==='number')?d:d.getDay(); return (dow+6)%7; }
@@ -441,7 +446,7 @@ function save(){
       jumpCount:G.jumpCount,
       swimDone:G.swimDone,
       gems:G.gems?[...G.gems]:[],
-      sportType:JUMP.includes(dw)?'jump':'swim',
+      sportType:jumpDays().includes(dw)?'jump':'swim',
       allDone:allTaskDone
     };
     
@@ -604,7 +609,7 @@ function handleDayChange(prevDate, today){
   
   if(prevDate){
     const dw=new Date(prevDate).getDay();
-    const wasJumpDay=JUMP.includes(dw);
+    const wasJumpDay=jumpDays(prevDate).includes(dw);
     
     // 写入 history
     if(!G.history) G.history={};
@@ -873,12 +878,12 @@ function repairData(){
   // 也算上今天（如果今天已完成运动，但 history 里还没有今天的记录）
   const todayDs=todayDate.toDateString();
   const todayHistRec=G.history[todayDs];
-  if(G.swimDone && SWIM.includes(todayDow)){
+  if(G.swimDone && swimDays().includes(todayDow)){
     if(!todayHistRec || !todayHistRec.swimDone){
       realWeekSwim++;
     }
   }
-  if(G.tasks.sport && JUMP.includes(todayDow) && G.jumpCount>=JUMP_TARGET){
+  if(G.tasks.sport && jumpDays().includes(todayDow) && G.jumpCount>=JUMP_TARGET){
     if(!todayHistRec || todayHistRec.sportType!=='jump' || todayHistRec.jumpCount<1000){
       realWeekJump++;
     }
@@ -925,8 +930,8 @@ function repairData(){
   // 核心逻辑：如果 tasks.sport=true 但 _sportCompletedToday=false，说明不是用户主动操作，强制重置
   const todayDs_fix = new Date().toDateString();
   const dw_fix = new Date().getDay();
-  const isJumpDay_fix = JUMP.includes(dw_fix);
-  const isSwimDay_fix = SWIM.includes(dw_fix);
+  const isJumpDay_fix = jumpDays().includes(dw_fix);
+  const isSwimDay_fix = swimDays().includes(dw_fix);
   
   if(G.date === todayDs_fix){
     // 跳绳日：jumpCount >= JUMP_TARGET 但用户未主动完成 → 数据被污染，强制重置
@@ -1354,8 +1359,8 @@ async function cloudLoad(){
                     // 【v12.2 修复】sport 合并必须检查 _sportCompletedToday 源数据标志位
                     // 只有本地或云端明确标记了用户主动完成，才允许合并
                     const dw_cl = new Date().getDay();
-                    const isJ_cl = JUMP.includes(dw_cl);
-                    const isS_cl = SWIM.includes(dw_cl);
+                    const isJ_cl = jumpDays().includes(dw_cl);
+                    const isS_cl = swimDays().includes(dw_cl);
                     
                     // 本地已有用户主动完成的运动数据
                     if(G._sportCompletedToday && ((isJ_cl && G.jumpCount >= JUMP_TARGET) || (isS_cl && G.swimDone))){
@@ -2031,7 +2036,7 @@ function renderDateNav(){
     const ds=d.toDateString();
     const isToday=ds===today.toDateString();
     const isFuture=d>today&&!isToday;
-    const dw=d.getDay(),isJ=JUMP.includes(dw),isS=SWIM.includes(dw);
+    const dw=d.getDay(),isJ=jumpDays(d).includes(dw),isS=swimDays(d).includes(dw);
     const status=G.weekly[ds];
     // 也检查 history 中是否有数据（有些旧数据可能只在 history 里）
     const hasHistory=G.history&&G.history[ds];
@@ -2260,7 +2265,7 @@ function showHistoryDetail(dateStr){
   
   if(!hist){
     // 【v6.0】没有记录时显示补录按钮 → 统一到新版补录对话框
-    const isJ=JUMP.includes(dw);
+    const isJ=jumpDays(new Date(dateStr)).includes(dw);
     const sportLabel=isJ?'跳绳':'游泳';
     panel.innerHTML=`<div class="history-header">
       <h3>📅 ${dateLabel}</h3>
@@ -2296,7 +2301,7 @@ function showHistoryDetail(dateStr){
   let habitsHtml='';
   if(hist.habits){
     const habitLabels=[
-      {k:'fast',e:'⚡',t:'做事快速不拖拉'},
+      {k:'fast',e:'⚡',t:'规划好自己的事情'},
       {k:'tidy',e:'🥛',t:'按时吃维生素D'},
       {k:'polite',e:'🌙',t:'晚上10点前上床睡觉'}
     ];
@@ -2409,7 +2414,7 @@ function closeHistoryPanel(){
 function backfillDate(dateStr){
   const d=new Date(dateStr);
   const dw=d.getDay();
-  const isJ=JUMP.includes(dw);
+  const isJ=jumpDays(d).includes(dw);
   const dateLabel=`${d.getMonth()+1}月${d.getDate()}日 周${W[dw]}`;
   
   const panel=document.getElementById('historyPanel');
@@ -2444,7 +2449,7 @@ function backfillDate(dateStr){
     <hr style="margin:12px 0;border:none;border-top:1px solid var(--border)"/>
     <div class="backfill-item" onclick="toggleBackfill(this,'fast')">
       <span class="bf-cb" id="bf_fast">⬜</span>
-      <span>⚡ 做事快速不拖拉</span>
+      <span>⚡ 规划好自己的事情</span>
     </div>
     <div class="backfill-item" onclick="toggleBackfill(this,'tidy')">
       <span class="bf-cb" id="bf_tidy">⬜</span>
@@ -2488,7 +2493,7 @@ function backfillAll(dateStr){
 function submitBackfill(dateStr){
   const d=new Date(dateStr);
   const dw=d.getDay();
-  const isJ=JUMP.includes(dw);
+  const isJ=jumpDays(d).includes(dw);
   const jumpInput=document.getElementById('bf_jumpCount');
   const jumpCount=isJ?(jumpInput?parseInt(jumpInput.value)||0:JUMP_TARGET):0;
   
@@ -2551,7 +2556,7 @@ function submitBackfill(dateStr){
 // ===== 运动卡片 =====
 function renderSport(){
   const c=document.getElementById('sportCardContainer');
-  const dw=new Date().getDay(),isJ=JUMP.includes(dw),isS=SWIM.includes(dw);
+  const dw=new Date().getDay(),isJ=jumpDays().includes(dw),isS=swimDays().includes(dw);
   let h='';
   if(isJ){
     const pct=Math.min(100,(G.jumpCount/JUMP_TARGET)*100),done=G.jumpCount>=JUMP_TARGET;
@@ -2587,7 +2592,7 @@ function renderSport(){
 // ===== 宝石 =====
 function renderGems(){
   const g=document.getElementById('gemsGrid');
-  const dw=new Date().getDay(),isJ=JUMP.includes(dw);
+  const dw=new Date().getDay(),isJ=jumpDays().includes(dw);
   const gems=[
     {n:isJ?'跳绳':'游泳',i:isJ?'🧡':'💙',k:'sport'},
     {n:'作业',i:'💜',k:'homework'},{n:'学习',i:'💛',k:'study'},
@@ -2602,7 +2607,7 @@ function renderGems(){
 // ===== 任务 =====
 function renderTasks(){
   const l=document.getElementById('tasksList');
-  const dw=new Date().getDay(),isJ=JUMP.includes(dw);
+  const dw=new Date().getDay(),isJ=jumpDays().includes(dw);
   const tasks=[
     {k:'sport',e:isJ?'🏃‍♀️':'🏊‍♀️',t:isJ?`跳绳 ${G.jumpCount}/${JUMP_TARGET}`:'完成游泳课',d:isJ?'今天是跳绳日！加油！':'今天是游泳日！加油！',g:isJ?'🧡':'💙'},
     {k:'homework',e:'📝',t:'认真高效完成学校作业',d:'专注写作业，不拖拉不磨蹭',g:'💜'},
@@ -2655,11 +2660,9 @@ function toggleJump(){
     G.consJump=Math.max(0,G.consJump-1);
     G.gems=G.gems.filter(g=>g!=='sport');
   }else{
-    // 标记完成
-    if(G.jumpCount>=JUMP_TARGET){
-      G.jumpCount=JUMP_TARGET;
-      G.tasks.sport=true;G._sportCompletedToday=true;G.consJump++;gemAnim('🧡');checkJumpHero();
-    }else{alert(`还需要跳 ${JUMP_TARGET-G.jumpCount} 个！`);return;}
+    // 标记完成（一键完成：自动补满到目标）
+    if(G.jumpCount<JUMP_TARGET) G.jumpCount=JUMP_TARGET;
+    G.tasks.sport=true;G._sportCompletedToday=true;G.consJump++;gemAnim('🧡');checkJumpHero();
   }
   renderSport();renderGems();renderTasks();renderStoryProg();updateStatus();save();
 }
@@ -2765,7 +2768,7 @@ function unlockStory(){
     if(existStory) showStoryModal(existStory);
     return;
   }
-  const dw=new Date().getDay(),isJ=JUMP.includes(dw);
+  const dw=new Date().getDay(),isJ=jumpDays().includes(dw);
   const pool=isJ?STORIES.jump:STORIES.swim;
   
   // 【v8.1 修复】排除已收集过的故事，确保每天不重复
@@ -3419,7 +3422,7 @@ function renderHabits(){
   const l=document.getElementById('habitsList');
   if(!l)return;
   const habits=[
-    {k:'fast',e:'⚡',t:'做事快速不拖拉',d:'行动力满满，说做就做！'},
+    {k:'fast',e:'⚡',t:'规划好自己的事情',d:'比如清洗鼻子、收拾书包'},
     {k:'tidy',e:'🥛',t:'按时吃维生素D',d:'每天按时吃维生素D，长高高！'},
     {k:'polite',e:'🌙',t:'晚上10点前上床睡觉',d:'早睡早起，养成好的作息习惯！'}
   ];
@@ -3441,7 +3444,7 @@ function toggleHabit(k){
     if(!G.gems.includes('outdoor')) G.gems.push('outdoor');
     gemAnim('💚');
     renderGems();renderTasks();renderStoryProg();
-    setTimeout(()=>showAchModal('🌟 好习惯之星！',{text:'🎉 太棒了！\n\n你今天的行为习惯全部达标！\n\n做事快速不拖拉 ⚡\n按时吃维生素D 🥛\n10点前上床睡觉 🌙\n\n你就是最闪亮的好习惯之星！继续保持哦！✨'}),600);
+    setTimeout(()=>showAchModal('🌟 好习惯之星！',{text:'🎉 太棒了！\n\n你今天的行为习惯全部达标！\n\n规划好自己的事情 ⚡\n按时吃维生素D 🥛\n10点前上床睡觉 🌙\n\n你就是最闪亮的好习惯之星！继续保持哦！✨'}),600);
     renderAch();
   } else if(allDone){
     G.tasks.outdoor=true;
@@ -3809,7 +3812,7 @@ function renderRecGems() {
   if (!g) return;
   
   const dw = new Date(recDialogDateStr).getDay();
-  const isJ = JUMP.includes(dw);
+  const isJ = jumpDays(new Date(recDialogDateStr)).includes(dw);
   const gems = [
     { n: isJ ? '跳绳' : '游泳', i: isJ ? '🧡' : '💙', k: 'sport' },
     { n: '作业', i: '💜', k: 'homework' },
@@ -3833,7 +3836,7 @@ function renderRecSportCard() {
   if (!container) return;
   
   const dw = new Date(recDialogDateStr).getDay();
-  const isJ = JUMP.includes(dw);
+  const isJ = jumpDays(new Date(recDialogDateStr)).includes(dw);
   const sportDone = recDialogData.tasks.sport;
   
   // 格式化日期显示：3月15日(周三)
@@ -3891,7 +3894,7 @@ function renderRecTasks() {
   if (!l) return;
   
   const dw = new Date(recDialogDateStr).getDay();
-  const isJ = JUMP.includes(dw);
+  const isJ = jumpDays(new Date(recDialogDateStr)).includes(dw);
   const tasks = [
     { k: 'sport', e: isJ ? '🏃‍♀️' : '🏊‍♀️', t: isJ ? `跳绳 ${G.jumpCount}/${JUMP_TARGET}` : '完成游泳课', d: isJ ? '这是跳绳日！加油！' : '这是游泳日！加油！', g: isJ ? '🧡' : '💙' },
     { k: 'homework', e: '📝', t: '认真高效完成学校作业', d: '专注写作业，不拖拉不磨蹭', g: '💜' },
@@ -4100,7 +4103,7 @@ function recToggleTask(k) {
 // 【辅助】从故事池为指定日期选一个系统故事（带 choices）
 function pickSystemStoryForDate(dateStr) {
   const dw = new Date(dateStr).getDay();
-  const isJ = JUMP.includes(dw);
+  const isJ = jumpDays(new Date(dateStr)).includes(dw);
   const pool = isJ ? STORIES.jump : STORIES.swim;
   
   // 排除已收集的故事
@@ -4274,7 +4277,7 @@ async function confirmRecovery() {
   const done = Object.values(recDialogData.tasks).filter(v => v).length;
   const allDone = done >= 4;
   const dw = new Date(recDialogDateStr).getDay();
-  const isJ = JUMP.includes(dw);
+  const isJ = jumpDays(new Date(recDialogDateStr)).includes(dw);
   
   G.history[recDialogDateStr] = {
     tasks: { ...recDialogData.tasks },
@@ -4300,7 +4303,7 @@ async function confirmRecovery() {
       G.collected.push({
         ...recDialogData.story,
         date: recDialogDateStr,
-        type: JUMP.includes(new Date(recDialogDateStr).getDay()) ? 'jump' : 'swim'
+        type: jumpDays(new Date(recDialogDateStr)).includes(new Date(recDialogDateStr).getDay()) ? 'jump' : 'swim'
       });
       console.log('[补录] 故事已加入收集集：', recDialogData.story.title);
     }
