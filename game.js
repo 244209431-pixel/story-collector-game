@@ -2788,13 +2788,19 @@ function unlockStory(){
   
   if(!G.gems.includes('story'))G.gems.push('story');
   G.collected.push({...story,date:new Date().toLocaleDateString('zh-CN'),type:isJ?'jump':'swim'});
+  window._pendingCollectedIdx=G.collected.length-1;
   renderGems();renderCollected();save();showStoryModal(story);bigConfetti();
 }
 function showStoryModal(s){
   if(!s || !s.text) return;
   document.getElementById('mStoryTitle').textContent=s.title||'今日故事';
   let b=`<div class="story-text">${(s.text||'').replace(/\n/g,'<br>')}</div>`;
-  if(s.choices&&s.choices.length){
+  // 如果已选结局，直接展示结局；否则显示选择按钮
+  if(s.selectedEnding){
+    b+=`<div style="margin-top:16px;padding:14px;background:rgba(255,215,0,.1);border-radius:12px;border:1px solid rgba(255,215,0,.3)">
+      <p style="color:var(--gold);font-size:16px">🎬 你选择了「${s.selectedEnding}」</p>
+      <p style="color:var(--t2);font-size:14px;margin-top:6px">已保存到成长宝箱！</p></div>`;
+  } else if(s.choices&&s.choices.length){
     b+='<p style="margin-top:14px;color:var(--gold);font-size:15px">选择你想要的结局：</p><div class="story-choices">';
     s.choices.forEach(c=>{b+=`<button class="s-choice" onclick="selectEnd('${c.ending}')">${c.text}</button>`});
     b+='</div>';
@@ -2806,6 +2812,15 @@ function showStoryModal(s){
   modal.classList.add('show');
 }
 function selectEnd(e){
+  // 写入已选结局：正常流程直接写 collected；补录流程暂存到 _pendingEnding
+  if(window._pendingCollectedIdx !== undefined && G.collected[window._pendingCollectedIdx]){
+    G.collected[window._pendingCollectedIdx].selectedEnding=e;
+    save();
+    window._pendingCollectedIdx=undefined;
+  } else {
+    // 补录场景：暂存结局，等 saveRecoveryData 时再写入
+    window._pendingEnding=e;
+  }
   // 移除选择按钮
   document.querySelectorAll('.s-choice').forEach(b=>b.style.display='none');
   // 在返回按钮前插入结局内容
@@ -3410,11 +3425,12 @@ function renderCollected(){
   if(!G.collected.length){c.innerHTML='<p style="text-align:center;color:var(--t3);font-size:13px;padding:20px">还没有收集到故事，完成任务来解锁吧！</p>';return}
   c.innerHTML=G.collected.map((s,idx)=>`<div class="collected-item" onclick="showCollectedStory(${idx})">
     <div style="display:flex;align-items:center;gap:8px"><span style="font-size:20px">${s.type==='jump'?'🏃‍♀️':'🏊‍♀️'}</span><div>
-    <h4>${s.title}</h4><p>${s.date} · ${s.type==='jump'?'跳绳日故事':'游泳日故事'}</p></div></div></div>`).join('');
+    <h4>${s.title}</h4><p>${s.date} · ${s.type==='jump'?'跳绳日故事':'游泳日故事'}</p>
+    ${s.selectedEnding?`<p style="color:var(--gold);font-size:12px;margin-top:2px">🎬 结局：${s.selectedEnding}</p>`:''}</div></div></div>`).join('');
 }
 function showCollectedStory(idx){
   const s=G.collected[idx];
-  if(s)showStoryModal({title:s.title,text:s.text,choices:[]});
+  if(s)showStoryModal(s);
 }
 
 // ===== 行为习惯 =====
@@ -4303,9 +4319,11 @@ async function confirmRecovery() {
       G.collected.push({
         ...recDialogData.story,
         date: recDialogDateStr,
-        type: jumpDays(new Date(recDialogDateStr)).includes(new Date(recDialogDateStr).getDay()) ? 'jump' : 'swim'
+        type: jumpDays(new Date(recDialogDateStr)).includes(new Date(recDialogDateStr).getDay()) ? 'jump' : 'swim',
+        selectedEnding: window._pendingEnding || undefined
       });
-      console.log('[补录] 故事已加入收集集：', recDialogData.story.title);
+      console.log('[补录] 故事已加入收集集：', recDialogData.story.title, window._pendingEnding?'结局：'+window._pendingEnding:'');
+      window._pendingEnding=undefined;
     }
   }
   
