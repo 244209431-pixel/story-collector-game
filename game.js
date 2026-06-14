@@ -2612,7 +2612,7 @@ function renderTasks(){
     {k:'sport',e:isJ?'🏃‍♀️':'🏊‍♀️',t:isJ?`跳绳 ${G.jumpCount}/${JUMP_TARGET}`:'完成游泳课',d:isJ?'今天是跳绳日！加油！':'今天是游泳日！加油！',g:isJ?'🧡':'💙'},
     {k:'homework',e:'📝',t:'认真高效完成学校作业',d:'专注写作业，不拖拉不磨蹭',g:'💜'},
     {k:'study',e:'📖',t:'认真学习英语',d:'专注高效，认真完成学习任务',g:'💛'},
-    {k:'outdoor',e:'⭐',t:'今日行为习惯达标',d:'做事快速、吃维生素D、早睡',g:'💚'}
+    {k:'outdoor',e:'⭐',t:'今日行为习惯达标',d:'有规划、吃维生素D、早睡',g:'💚'}
   ];
   l.innerHTML=tasks.map(t=>{
     const done=G.tasks[t.k];
@@ -3899,7 +3899,7 @@ function renderRecTasks() {
     { k: 'sport', e: isJ ? '🏃‍♀️' : '🏊‍♀️', t: isJ ? `跳绳 ${G.jumpCount}/${JUMP_TARGET}` : '完成游泳课', d: isJ ? '这是跳绳日！加油！' : '这是游泳日！加油！', g: isJ ? '🧡' : '💙' },
     { k: 'homework', e: '📝', t: '认真高效完成学校作业', d: '专注写作业，不拖拉不磨蹭', g: '💜' },
     { k: 'study', e: '📖', t: '认真学习英语', d: '专注高效，认真完成学习任务', g: '💛' },
-    { k: 'outdoor', e: '⭐', t: '今日行为习惯达标', d: '做事快速、吃维生素D、早睡', g: '💚' }
+    { k: 'outdoor', e: '⭐', t: '今日行为习惯达标', d:'有规划、吃维生素D、早睡', g: '💚' }
   ];
   
   l.innerHTML = tasks.map(t => {
@@ -3974,7 +3974,7 @@ function renderRecHabits() {
   
   // 【修复】键名与主页面 G.habits 保持一致：fast/tidy/polite
   const habits = [
-    { k: 'fast', t: '做事快速不磨蹭', i: '⚡' },
+    { k: 'fast', t: '规划好事情', i: '⚡' },
     { k: 'tidy', t: '吃维生素D', i: '🥛' },
     { k: 'polite', t: '早睡（10点前上床）', i: '🌙' }
   ];
